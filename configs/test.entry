@@ -1,0 +1,17 @@
+# vim: set ft=toml:
+
+type = "directory"
+from = "/etc/ssh"
+to = "local"
+
+[[hook.success]]
+cmd = "echo 123"
+
+[[hook.success]]
+cmd = "echo qwerty"
+
+[[hook.failure]]
+cmd = "echo 321"
+
+[[hook.failure]]
+cmd = "echo ytrewq"

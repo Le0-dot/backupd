@@ -3,60 +3,60 @@
 module Main (main) where
 
 import Control.Monad (forM)
+import Data.Map (Map)
 import Data.Text (Text)
 import System.Directory
-import System.FilePath ((</>))
-import Toml (TomlCodec, decodeFile, dioptional, diwrap, list, table, text, textBy, (.=))
+import System.FilePath (isExtensionOf, (</>))
+import Toml (TomlCodec, decodeFile, diwrap, list, tableMap, text, textBy, (.=), _KeyText) -- from tomland
 
-data Config = Config
-  { configBackup :: Backup,
-    configBackend :: Maybe Backend,
-    configSuccessHooks :: [Text],
-    configFailureHooks :: [Text]
+newtype StorageFile = StorageFile
+  { storageFileEntries :: Map Text Storage
   }
   deriving (Show)
 
-data Backup = Backup
-  { configType :: BackupType,
-    configFrom :: Location
+data Storage = Storage
+  { storagePath :: Text,
+    storageKey :: Secret
+  }
+  deriving (Show)
+
+data Entry = Entry
+  { entryType :: BackupType,
+    entryFrom :: Text,
+    entryTo :: Text,
+    entrySuccessHooks :: [Text],
+    entryFailureHooks :: [Text]
   }
   deriving (Show)
 
 data BackupType = File | Directory | DockerVolume
   deriving (Show, Read, Enum, Bounded)
 
-newtype Location = Location Text deriving (Show)
-
-data Backend = Backend
-  { configTo :: Location,
-    configKey :: Secret
-  }
-  deriving (Show)
-
 newtype Secret = Secret Text
 
 instance Show Secret where
-  show _ = "********"
+  -- show _ = "********"
+  show (Secret t) = show t
 
-configCodec :: TomlCodec Config
-configCodec =
-  Config
-    <$> Toml.table backupCodec "backup" .= configBackup
-    <*> Toml.dioptional (Toml.table backendCodec "backend") .= configBackend
-    <*> Toml.list (Toml.text "cmd") "hooks.success" .= configSuccessHooks
-    <*> Toml.list (Toml.text "cmd") "hooks.failure" .= configSuccessHooks
+storageFileCodec :: TomlCodec StorageFile
+storageFileCodec =
+  StorageFile
+    <$> Toml.tableMap Toml._KeyText (const storageCodec) "storage" .= storageFileEntries
 
-backupCodec :: TomlCodec Backup
-backupCodec =
-  Backup
-    <$> Toml.textBy showType parseType "type" .= configType
-    <*> Toml.diwrap (Toml.text "from") .= configFrom
+storageCodec :: TomlCodec Storage
+storageCodec =
+  Storage
+    <$> Toml.text "path" .= storagePath
+    <*> Toml.diwrap (Toml.text "key") .= storageKey
 
-backendCodec :: TomlCodec Backend
-backendCodec =
-  Backend
-    <$> Toml.diwrap (Toml.text "to") .= configTo
-    <*> Toml.diwrap (Toml.text "key") .= configKey
+entryCodec :: TomlCodec Entry
+entryCodec =
+  Entry
+    <$> Toml.textBy showType parseType "type" .= entryType
+    <*> Toml.text "from" .= entryFrom
+    <*> Toml.diwrap (Toml.text "to") .= entryTo
+    <*> Toml.list (Toml.text "cmd") "hooks.success" .= entrySuccessHooks
+    <*> Toml.list (Toml.text "cmd") "hooks.failure" .= entrySuccessHooks
 
 showType :: BackupType -> Text
 showType File = "file"
@@ -69,13 +69,27 @@ parseType "directory" = Right Directory
 parseType "volume" = Right DockerVolume
 parseType other = Left $ "Unsupported backup type: " <> other
 
-readConfigs :: FilePath -> IO [Config]
-readConfigs dir = do
-  files <- listDirectory dir
+filesIn :: String -> FilePath -> IO [FilePath]
+filesIn ext dir = do
+  contents <- listDirectory dir
+  let files = filter (isExtensionOf ext) contents
   let paths = (dir </>) <$> files
-  forM paths $ Toml.decodeFile configCodec
+  return paths
+
+readConfigs :: String -> FilePath -> TomlCodec a -> IO [a]
+readConfigs ext dir codec = do
+  files <- filesIn ext dir
+  forM files $ Toml.decodeFile codec
+
+readEntries :: FilePath -> IO [Entry]
+readEntries dir = readConfigs "entry" dir entryCodec
+
+readStorageFiles :: FilePath -> IO [StorageFile]
+readStorageFiles dir = readConfigs "storage" dir storageFileCodec
 
 main :: IO ()
 main = do
-  configs <- readConfigs "configs"
-  print configs
+  storage <- readStorageFiles "configs"
+  entries <- readEntries "configs"
+  print storage
+  print entries
