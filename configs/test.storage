@@ -1,9 +1,11 @@
 # vim: set ft=toml:
 
-[storage.local]
+[[storage]]
+name = "local"
 path = "/srv/backups"
 key = "somekeyforencryption"
 
-[storage.gdrive]
+[[storage]]
+name = "gdrive"
 path = "rclone:gdrive:/backup"
 key = "someotherkeyforencryption"
