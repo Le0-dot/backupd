@@ -15,6 +15,8 @@ import qualified Toml
 
 type StorageMap = M.Map String Storage
 
+type StorageMapKeys = S.Set String
+
 type EntryMap = M.Map String Entry
 
 data Storage = Storage
@@ -79,7 +81,7 @@ decodeStorage storageMap file = do
   let name = takeBaseName file
   return $ M.insert name storage storageMap
 
-decodeEntry :: (MonadIO m, MonadFail m) => S.Set String -> EntryMap -> FilePath -> m EntryMap
+decodeEntry :: (MonadIO m, MonadFail m) => StorageMapKeys -> EntryMap -> FilePath -> m EntryMap
 decodeEntry storageEntries entryMap file = do
   entry <- Toml.decodeFile entryCodec file
   let storage = T.unpack $ entryTo entry
@@ -89,8 +91,8 @@ decodeEntry storageEntries entryMap file = do
 
 main :: IO ()
 main = do
-  storageFiles <- filesIn "storage" "configs"
-  entryFiles <- filesIn "entry" "configs"
+  storageFiles <- filesIn "storage" "example-config"
+  entryFiles <- filesIn "entry" "example-config"
 
   storageMap <- foldM decodeStorage M.empty storageFiles
   entries <- forM entryFiles $ decodeEntry (M.keysSet storageMap) M.empty
