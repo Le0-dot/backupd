@@ -1,0 +1,4 @@
+# vim: set ft=toml:
+
+path = "rclone:gdrive:/backup"
+key = "someotherkeyforencryption"

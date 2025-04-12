@@ -1,0 +1,4 @@
+# vim: set ft=toml:
+
+path = "/srv/backups"
+key = "somekeyforencryption"
