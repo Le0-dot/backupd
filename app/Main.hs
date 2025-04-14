@@ -8,8 +8,9 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Text as T
 import System.Directory
+import System.Exit (ExitCode)
 import System.FilePath (isExtensionOf, takeBaseName, (</>))
-import System.Process (CmdSpec (RawCommand), CreateProcess (CreateProcess), StdStream (Inherit, NoStream), createProcess, waitForProcess)
+import System.Process (CmdSpec (RawCommand), CreateProcess (CreateProcess), StdStream (Inherit, NoStream), createProcess, readCreateProcess, readCreateProcessWithExitCode, readProcessWithExitCode, waitForProcess)
 import System.Process.Internals (CreateProcess (..))
 import Text.Printf (printf)
 import Toml ((.=))
@@ -91,12 +92,18 @@ decodeEntry storageEntries entryMap file = do
     then return $ M.insert (takeBaseName file) entry entryMap
     else fail $ printf "storage with name %s was not configured" $ show storage
 
-createRestic :: T.Text -> Secret -> CreateProcess
-createRestic repo pass =
+storageToResticEnv :: Storage -> [(String, String)]
+storageToResticEnv storage =
+  [ ("RESTIC_REPOSITORY", T.unpack $ storagePath storage),
+    ("RESTIC_PASSWORD", T.unpack $ secretText $ storageKey storage)
+  ]
+
+createRestic :: Storage -> CreateProcess
+createRestic storage =
   CreateProcess
     { cmdspec = RawCommand "/usr/bin/restic" ["check"],
       cwd = Nothing,
-      env = Just [("RESTIC_REPOSITORY", T.unpack repo), ("RESTIC_PASSWORD", T.unpack $ secretText pass)],
+      env = Just $ storageToResticEnv storage,
       std_in = NoStream,
       std_out = Inherit,
       std_err = Inherit,
@@ -111,6 +118,9 @@ createRestic repo pass =
       use_process_jobs = False
     }
 
+readProcess :: CreateProcess -> IO (ExitCode, String, String)
+readProcess = flip readCreateProcessWithExitCode []
+
 main :: IO ()
 main = do
   storageFiles <- filesIn "storage" "example-config"
@@ -122,9 +132,9 @@ main = do
   print storageMap
   print entries
 
-  let proc = createRestic "test" $ Secret "123"
-  (_, _, _, handle) <- createProcess proc
-
-  exitCode <- waitForProcess handle
+  let proc = createRestic $ Storage "test" $ Secret "123"
+  (exitCode, stdout, stderr) <- readProcess proc
 
   print exitCode
+  putStrLn stdout
+  putStrLn stderr
