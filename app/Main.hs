@@ -9,6 +9,8 @@ import qualified Data.Set as S
 import qualified Data.Text as T
 import System.Directory
 import System.FilePath (isExtensionOf, takeBaseName, (</>))
+import System.Process (CmdSpec (RawCommand), CreateProcess (CreateProcess), StdStream (Inherit, NoStream), createProcess, waitForProcess)
+import System.Process.Internals (CreateProcess (..))
 import Text.Printf (printf)
 import Toml ((.=))
 import qualified Toml
@@ -37,7 +39,7 @@ data Entry = Entry
 data BackupType = File | Directory | DockerVolume
   deriving (Show, Read, Enum, Bounded)
 
-newtype Secret = Secret T.Text deriving (Eq, Ord)
+newtype Secret = Secret {secretText :: T.Text} deriving (Eq, Ord)
 
 instance Show Secret where
   show _ = "********"
@@ -89,6 +91,26 @@ decodeEntry storageEntries entryMap file = do
     then return $ M.insert (takeBaseName file) entry entryMap
     else fail $ printf "storage with name %s was not configured" $ show storage
 
+createRestic :: T.Text -> Secret -> CreateProcess
+createRestic repo pass =
+  CreateProcess
+    { cmdspec = RawCommand "/usr/bin/restic" ["check"],
+      cwd = Nothing,
+      env = Just [("RESTIC_REPOSITORY", T.unpack repo), ("RESTIC_PASSWORD", T.unpack $ secretText pass)],
+      std_in = NoStream,
+      std_out = Inherit,
+      std_err = Inherit,
+      close_fds = True,
+      create_group = False,
+      delegate_ctlc = False,
+      detach_console = False,
+      create_new_console = False,
+      new_session = False,
+      child_group = Nothing,
+      child_user = Nothing,
+      use_process_jobs = False
+    }
+
 main :: IO ()
 main = do
   storageFiles <- filesIn "storage" "example-config"
@@ -99,3 +121,10 @@ main = do
 
   print storageMap
   print entries
+
+  let proc = createRestic "test" $ Secret "123"
+  (_, _, _, handle) <- createProcess proc
+
+  exitCode <- waitForProcess handle
+
+  print exitCode
