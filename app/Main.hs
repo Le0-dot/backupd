@@ -10,8 +10,7 @@ import qualified Data.Text as T
 import System.Directory
 import System.Exit (ExitCode)
 import System.FilePath (isExtensionOf, takeBaseName, (</>))
-import System.Process (CmdSpec (RawCommand), CreateProcess (CreateProcess), StdStream (Inherit, NoStream), createProcess, readCreateProcess, readCreateProcessWithExitCode, readProcessWithExitCode, waitForProcess)
-import System.Process.Internals (CreateProcess (..))
+import System.Process (CmdSpec (RawCommand), CreateProcess (..), StdStream (..), readCreateProcessWithExitCode)
 import Text.Printf (printf)
 import Toml ((.=))
 import qualified Toml
@@ -92,16 +91,22 @@ decodeEntry storageEntries entryMap file = do
     then return $ M.insert (takeBaseName file) entry entryMap
     else fail $ printf "storage with name %s was not configured" $ show storage
 
+data ResticCommand = Check | Backup String deriving (Show)
+
+resticCommandToArg :: ResticCommand -> [String]
+resticCommandToArg Check = ["check"]
+resticCommandToArg (Backup path) = ["backup", path]
+
 storageToResticEnv :: Storage -> [(String, String)]
 storageToResticEnv storage =
   [ ("RESTIC_REPOSITORY", T.unpack $ storagePath storage),
     ("RESTIC_PASSWORD", T.unpack $ secretText $ storageKey storage)
   ]
 
-createRestic :: Storage -> CreateProcess
-createRestic storage =
+createRestic :: ResticCommand -> Storage -> CreateProcess
+createRestic command storage =
   CreateProcess
-    { cmdspec = RawCommand "/usr/bin/restic" ["check"],
+    { cmdspec = RawCommand "/usr/bin/restic" $ resticCommandToArg command,
       cwd = Nothing,
       env = Just $ storageToResticEnv storage,
       std_in = NoStream,
@@ -132,7 +137,7 @@ main = do
   print storageMap
   print entries
 
-  let proc = createRestic $ Storage "test" $ Secret "123"
+  let proc = createRestic Check $ storageMap M.! "local"
   (exitCode, stdout, stderr) <- readProcess proc
 
   print exitCode
