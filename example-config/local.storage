@@ -1,4 +1,5 @@
 # vim: set ft=toml:
 
-path = "/srv/backups"
+path = "/home/le0/Documents/haskell/backupd/test"
 key = "somekeyforencryption"
+key-command = "somekeyforencryption"

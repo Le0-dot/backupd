@@ -8,9 +8,9 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Text as T
 import System.Directory
-import System.Exit (ExitCode)
+import System.Exit (ExitCode(..))
 import System.FilePath (isExtensionOf, takeBaseName, (</>))
-import System.Process (CmdSpec (RawCommand), CreateProcess (..), StdStream (..), readCreateProcessWithExitCode)
+import System.Process (CmdSpec (RawCommand), CreateProcess (..), StdStream (..), readCreateProcessWithExitCode, waitForProcess, withCreateProcess)
 import Text.Printf (printf)
 import Toml ((.=))
 import qualified Toml
@@ -23,7 +23,8 @@ type EntryMap = M.Map String Entry
 
 data Storage = Storage
   { storagePath :: T.Text,
-    storageKey :: Secret
+    storageKey :: T.Text,
+    storageKeyCommand :: T.Text
   }
   deriving (Show, Eq, Ord)
 
@@ -39,16 +40,12 @@ data Entry = Entry
 data BackupType = File | Directory | DockerVolume
   deriving (Show, Read, Enum, Bounded)
 
-newtype Secret = Secret {secretText :: T.Text} deriving (Eq, Ord)
-
-instance Show Secret where
-  show _ = "********"
-
 storageCodec :: Toml.TomlCodec Storage
-storageCodec =
+storageCodec = Toml.validate (\v -> pure v) $
   Storage
     <$> Toml.text "path" .= storagePath
-    <*> Toml.diwrap (Toml.text "key") .= storageKey
+    <*> Toml.text "key" .= storageKey
+    <*> Toml.text "key-command" .= storageKeyCommand
 
 entryCodec :: Toml.TomlCodec Entry
 entryCodec =
@@ -91,9 +88,10 @@ decodeEntry storageEntries entryMap file = do
     then return $ M.insert (takeBaseName file) entry entryMap
     else fail $ printf "storage with name %s was not configured" $ show storage
 
-data ResticCommand = Check | Backup String deriving (Show)
+data ResticCommand = Init | Check | Backup String deriving (Show)
 
 resticCommandToArg :: ResticCommand -> [String]
+resticCommandToArg Init = ["init"]
 resticCommandToArg Check = ["check"]
 resticCommandToArg (Backup path) = ["backup", path]
 
@@ -126,6 +124,20 @@ createRestic command storage =
 readProcess :: CreateProcess -> IO (ExitCode, String, String)
 readProcess = flip readCreateProcessWithExitCode []
 
+processExitCode :: CreateProcess -> IO ExitCode
+processExitCode = flip withCreateProcess (\_ _ _ handle -> waitForProcess handle)
+
+initRepo :: Storage -> IO ()
+initRepo storage = do
+  code <- processExitCode $ createRestic Check storage
+  case code of
+    ExitSuccess -> return ()
+    ExitFailure _ -> do
+      ec <- processExitCode $ createRestic Init storage
+      case ec of
+        ExitSuccess -> return ()
+        ExitFailure _ -> fail ""
+
 main :: IO ()
 main = do
   storageFiles <- filesIn "storage" "example-config"
@@ -137,9 +149,11 @@ main = do
   print storageMap
   print entries
 
-  let proc = createRestic Check $ storageMap M.! "local"
-  (exitCode, stdout, stderr) <- readProcess proc
+  initRepo $ storageMap M.! "local"
 
-  print exitCode
-  putStrLn stdout
-  putStrLn stderr
+  -- let proc = createRestic Check $ storageMap M.! "local"
+  -- (exitCode, stdout, stderr) <- readProcess proc
+  --
+  -- print exitCode
+  -- putStrLn stdout
+  -- putStrLn stderr
