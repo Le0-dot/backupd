@@ -1,4 +1,5 @@
 from enum import StrEnum
+from pathlib import Path
 from typing import Annotated, Self, TextIO
 
 import toml
@@ -73,6 +74,27 @@ class Storage(NoExtraModel):
 
 def read_config[T: BaseModel](file: TextIO, cls: type[T]) -> T:
     return cls.model_validate(toml.load(file))
+
+
+def read_configs(dir: Path) -> tuple[dict[str, Storage], dict[str, Entry]]:
+    storages: dict[str, Storage] = {}
+    for path in dir.rglob("*.storage"):
+        with path.open() as file:
+            storages |= {path.stem: read_config(file, Storage)}
+
+    entries: dict[str, Entry] = {}
+    for path in dir.rglob("*.entry"):
+        with path.open() as file:
+            entry = read_config(file, Entry)
+
+            if entry.storage not in storages:
+                raise ValueError(
+                    f"entry {path.stem} is configured with storage {entry.storage} which does not exists"
+                )
+
+            entries |= {path.stem: entry}
+
+    return storages, entries
 
 
 def write_config(file: TextIO, model: BaseModel) -> None:
