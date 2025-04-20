@@ -1,20 +1,35 @@
-import sys
 from pathlib import Path
 
-from .config import read_configs, write_config
+import docker
+
+from backupd.config import Entry, EntryKind, Storage, read_configs
+from backupd.restic import backup, check, init, snapshots
+
+client = docker.from_env()
+
+
+def backup_entry(storage: Storage, entry: Entry, tag: str) -> None:
+    entry.hooks.run_start()
+
+    restic = backup(storage, entry.where, tag)
+
+    match entry.kind:
+        case EntryKind.FILE:
+            result = restic.run()
+        case EntryKind.VOLUME:
+            result = restic.run_docker(entry.to_mount())
+
+    entry.hooks.run_complete(result.success)
 
 
 def main() -> None:
     storages, entries = read_configs(Path("example-config"))
 
-    for name, value in storages.items():
-        print()
-        print(name)
-        print()
-        write_config(sys.stdout, value)
+    local = storages["local"]
 
-    for name, value in entries.items():
-        print()
-        print(name)
-        print()
-        write_config(sys.stdout, value)
+    if check(local).run().failure:
+        print(init(local).run().stdout)
+
+    backup_entry(storages["local"], entries["test"], "backupd:test")
+
+    print(snapshots(local).run().stdout)

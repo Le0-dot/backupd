@@ -1,15 +1,16 @@
+import subprocess
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Self, TextIO
+from typing import Annotated, TextIO
 
 import toml
+import docker.types
 from annotated_types import MinLen
 from pydantic import (
     BaseModel,
     ConfigDict,
     PlainSerializer,
     model_serializer,
-    model_validator,
 )
 
 
@@ -23,6 +24,10 @@ NonEmptyStr = Annotated[str, MinLen(1)]
 class Hook(NoExtraModel):
     cmd: NonEmptyStr
 
+    def run(self) -> None:
+        _ = subprocess.run(self.cmd, shell=True, capture_output=True, check=True)
+        # TODO: Log outputs
+
 
 type OptionalList[T] = Annotated[list[T], PlainSerializer(lambda x: x or None)]
 
@@ -31,6 +36,19 @@ class Hooks(NoExtraModel):
     start: OptionalList[Hook] = []
     success: OptionalList[Hook] = []
     failure: OptionalList[Hook] = []
+
+    def run_start(self) -> None:
+        for hook in self.start:
+            hook.run()
+
+    def run_complete(self, success: bool) -> None:
+        if success:
+            hooks = self.success
+        else:
+            hooks = self.failure
+
+        for hook in hooks:
+            hook.run()
 
     @model_serializer
     def serialize(self) -> dict[str, OptionalList[Hook]] | None:
@@ -47,29 +65,41 @@ class Hooks(NoExtraModel):
 
 class EntryKind(StrEnum):
     FILE = "file"
-    DIRECTORY = "directory"
     VOLUME = "volume"
 
 
 class Entry(NoExtraModel):
-    kind: Annotated[EntryKind, PlainSerializer(str)]
+    kind: Annotated[EntryKind, PlainSerializer(str)] = EntryKind.FILE
     where: NonEmptyStr
     storage: NonEmptyStr
     hooks: Hooks
 
+    def to_mount(self, path: str = "/data") -> docker.types.Mount:
+        types = {EntryKind.FILE: "bind", EntryKind.VOLUME: "volume"}
+        return docker.types.Mount(
+            path, self.where, type=types[self.kind], read_only=True
+        )
+
+
+class StorageKind(StrEnum):
+    LOCAL = "local"
+    RCLONE = "rclone"
+
 
 class Storage(NoExtraModel):
+    kind: Annotated[StorageKind, PlainSerializer(str)] = StorageKind.LOCAL
     path: NonEmptyStr
-    secret: NonEmptyStr | None = None
-    command: NonEmptyStr | None = None
+    secret: NonEmptyStr
+    # secret: NonEmptyStr | None = None
+    # command: NonEmptyStr | None = None
 
-    @model_validator(mode="after")
-    def validate_secrets(self) -> Self:
-        if self.secret is None and self.command is None:
-            raise ValueError("either 'secret' or 'command' must be defined")
-        if self.secret is not None and self.command is not None:
-            raise ValueError("'secret' and 'command' are mutually exclusive")
-        return self
+    # @model_validator(mode="after")
+    # def validate_secrets(self) -> Self:
+    #     if self.secret is None and self.command is None:
+    #         raise ValueError("either 'secret' or 'command' must be defined")
+    #     if self.secret is not None and self.command is not None:
+    #         raise ValueError("'secret' and 'command' are mutually exclusive")
+    #     return self
 
 
 def read_config[T: BaseModel](file: TextIO, cls: type[T]) -> T:
