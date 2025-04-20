@@ -1,11 +1,10 @@
 # vim: set ft=toml:
 
-kind = "directory"
-where = "/etc/ssh"
+where = "/home/le0/.ssh"
 storage = "local"
 
 [[hooks.success]]
-cmd = "echo 123"
+cmd = "echo 123 > ~/Documents/haskell/backupd/resutl"
 
 [[hooks.success]]
 cmd = "echo qwerty"
