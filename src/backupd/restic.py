@@ -1,11 +1,10 @@
 import subprocess
-from collections.abc import Sequence
 from dataclasses import dataclass
 
 import docker
 import docker.types
 
-from backupd.config import Storage
+from backupd.config.repo import Repo
 
 
 @dataclass
@@ -24,10 +23,10 @@ class ProcessResult:
 
 
 class ResticRunConfiguration:
-    def __init__(self, storage: Storage, *args: str) -> None:
+    def __init__(self, repo: Repo, *args: str) -> None:
         self.args: list[str] = list(args)
-        self.repository: str = storage.path
-        self.password: str = storage.secret
+        self.repository: str = repo.path
+        self.password: str = repo.key
 
     def run(self, restic: str = "/usr/bin/restic") -> ProcessResult:
         result = subprocess.run(
@@ -71,21 +70,21 @@ class ResticRunConfiguration:
         )
 
 
-def check(storage: Storage) -> ResticRunConfiguration:
-    return ResticRunConfiguration(storage, "check")
+def check(repo: Repo) -> ResticRunConfiguration:
+    return ResticRunConfiguration(repo, "check")
 
 
-def backup(storage: Storage, path: str, tag: str) -> ResticRunConfiguration:
-    return ResticRunConfiguration(storage, "backup", path, "--tag", tag)
+def backup(repo: Repo, path: str, tag: str) -> ResticRunConfiguration:
+    return ResticRunConfiguration(repo, "backup", path, "--tag", tag)
 
 
-def init(storage: Storage) -> ResticRunConfiguration:
-    return ResticRunConfiguration(storage, "init")
+def init(repo: Repo) -> ResticRunConfiguration:
+    return ResticRunConfiguration(repo, "init")
 
 
-def unlock(storage: Storage) -> ResticRunConfiguration:
-    return ResticRunConfiguration(storage, "unlock")
+def unlock(repo: Repo) -> ResticRunConfiguration:
+    return ResticRunConfiguration(repo, "unlock")
 
 
-def snapshots(storage: Storage, *args: str) -> ResticRunConfiguration:
-    return ResticRunConfiguration(storage, "snapshots", *args)
+def snapshots(repo: Repo, *args: str) -> ResticRunConfiguration:
+    return ResticRunConfiguration(repo, "snapshots", *args)
