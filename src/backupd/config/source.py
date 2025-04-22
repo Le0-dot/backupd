@@ -6,13 +6,12 @@ import toml
 from pydantic import (
     FilePath,
     PlainSerializer,
-    model_serializer,
 )
 from pykeepass import PyKeePass
 from pykeepass.exceptions import CredentialsError
 
 from backupd.config import CustomBase, NonEmptyStr
-from backupd.config.repo import Repo, repo_kind
+from backupd.config.repo import Repo, from_kind
 
 
 class RepoSource(CustomBase, ABC):
@@ -31,11 +30,14 @@ class RepoSource(CustomBase, ABC):
     def read(self) -> Repo:
         data = self._load()
 
-        if "kind" not in data:
+        if (kind := data.pop("kind", None)) is None:
             raise ValueError("no 'kind' key in repository configuration")
 
-        repo_cls = repo_kind(data.pop("kind"))
-        return repo_cls.model_validate(data)
+        instance = from_kind(kind).model_validate(data)
+
+        if isinstance(instance, Repo):
+            return instance
+        raise RuntimeError(f"repository with '{kind}' kind does not implement the protocol")
 
 
 class FileRepoSource(RepoSource):

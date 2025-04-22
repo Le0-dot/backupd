@@ -3,11 +3,10 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, TextIO
 
-import docker.types
+from docker.types import Mount
 import toml
 from pydantic import (
     PlainSerializer,
-    SerializeAsAny,
     field_serializer,
     field_validator,
     model_serializer,
@@ -63,7 +62,6 @@ class EntryKind(StrEnum):
     FILE = "file"
     VOLUME = "volume"
 
-
 class Entry(CustomBase):
     kind: Annotated[EntryKind, PlainSerializer(str)] = EntryKind.FILE
     where: NonEmptyStr
@@ -81,12 +79,6 @@ class Entry(CustomBase):
     @field_serializer("repo")
     def serialize_repo(self, repo: RepoSource) -> dict[str, dict[str, str]]:
         return {repo.kind(): repo.model_dump()}
-
-    def to_mount(self, path: str = "/data") -> docker.types.Mount:
-        types = {EntryKind.FILE: "bind", EntryKind.VOLUME: "volume"}
-        return docker.types.Mount(
-            path, self.where, type=types[self.kind], read_only=True
-        )
 
 
 def read_entries(dir: Path) -> dict[str, Entry]:
