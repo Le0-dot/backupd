@@ -1,14 +1,13 @@
 import subprocess
-from dataclasses import dataclass
 
-import docker
-import docker.types
+from docker import from_env
+from docker.types import Mount
+from pydantic import BaseModel
 
 from backupd.config.repo import Repo
 
 
-@dataclass
-class ProcessResult:
+class ProcessResult(BaseModel):
     exit_code: int
     stdout: str
     stderr: str
@@ -22,69 +21,65 @@ class ProcessResult:
         return bool(self.exit_code)
 
 
-class ResticRunConfiguration:
-    def __init__(self, repo: Repo, *args: str) -> None:
-        self.args: list[str] = list(args)
-        self.repository: str = repo.path
-        self.password: str = repo.key
-
-    def run(self, restic: str = "/usr/bin/restic") -> ProcessResult:
-        result = subprocess.run(
-            [restic, *self.args],
-            env={
-                "RESTIC_REPOSITORY": self.repository,
-                "RESTIC_PASSWORD": self.password,
-            },
-            capture_output=True,
-        )
-        return ProcessResult(
-            exit_code=result.returncode,
-            stdout=result.stdout.decode(),
-            stderr=result.stderr.decode(),
-        )
-
-    def run_docker(
-        self,
-        *mounts: docker.types.Mount,
-        image: str = "docker.io/instrumentisto/restic",
-        tag: str = "0.18",
-    ) -> ProcessResult:
-        client = docker.from_env()
-
-        container = client.containers.run(
-            f"{image}:{tag}",
-            self.args,
-            environment={
-                "RESTIC_REPOSITORY": "/repo",
-                "RESTIC_PASSWORD": self.password,
-            },
-            detach=True,
-            mounts=[docker.types.Mount("/repo", self.repository, type="bind"), *mounts],
-        )
-        response = container.wait()
-
-        return ProcessResult(
-            exit_code=response["StatusCode"],
-            stdout=container.logs(stdout=True, stderr=False, stream=False).decode(),
-            stderr=container.logs(stdout=False, stderr=True, stream=False).decode(),
-        )
+def run_restic(
+    repo: Repo, *args: str, binary: str = "/usr/bin/restic"
+) -> ProcessResult:
+    result = subprocess.run(
+        [binary, *args],
+        env=repo.env,
+        capture_output=True,
+    )
+    return ProcessResult(
+        exit_code=result.returncode,
+        stdout=result.stdout.decode(),
+        stderr=result.stderr.decode(),
+    )
 
 
-def check(repo: Repo) -> ResticRunConfiguration:
-    return ResticRunConfiguration(repo, "check")
+def check(repo: Repo) -> ProcessResult:
+    return run_restic(repo, "check")
 
 
-def backup(repo: Repo, path: str, tag: str) -> ResticRunConfiguration:
-    return ResticRunConfiguration(repo, "backup", path, "--tag", tag)
+def backup(repo: Repo, path: str, tag: str) -> ProcessResult:
+    return run_restic(repo, "backup", path, "--tag", tag)
 
 
-def init(repo: Repo) -> ResticRunConfiguration:
-    return ResticRunConfiguration(repo, "init")
+def init(repo: Repo) -> ProcessResult:
+    return run_restic(repo, "init")
 
 
-def unlock(repo: Repo) -> ResticRunConfiguration:
-    return ResticRunConfiguration(repo, "unlock")
+def unlock(repo: Repo) -> ProcessResult:
+    return run_restic(repo, "unlock")
 
 
-def snapshots(repo: Repo, *args: str) -> ResticRunConfiguration:
-    return ResticRunConfiguration(repo, "snapshots", *args)
+def snapshots(repo: Repo, *args: str) -> ProcessResult:
+    return run_restic(repo, "snapshots", *args)
+
+
+def run_docker_backup(
+    repo: Repo,
+    volume: str,
+    tag: str,
+    image: str = "docker.io/instrumentisto/restic",
+    image_tag: str = "0.18",
+) -> ProcessResult:
+    client = from_env()
+
+    mounts = [Mount("/data", volume, type="volume", read_only=True)]
+    if repo.kind == "local":
+        mounts.append(Mount(repo.path, repo.path, type="bind"))
+
+    container = client.containers.run(
+        f"{image}:{image_tag}",
+        ["backup", "/data", "--tag", tag],
+        environment=repo.env,
+        detach=True,
+        mounts=mounts,
+    )
+    response = container.wait()
+
+    return ProcessResult(
+        exit_code=response["StatusCode"],
+        stdout=container.logs(stdout=True, stderr=False, stream=False).decode(),
+        stderr=container.logs(stdout=False, stderr=True, stream=False).decode(),
+    )
