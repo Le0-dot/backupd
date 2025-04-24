@@ -6,9 +6,10 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "docker>=7.1.0",
+    "fastapi[standard]>=0.115.12",
     "pydantic>=2.11.3",
     "pykeepass>=4.1.1.post1",
-    "toml>=0.10.2",
+    "types-docker>=7.1.0.20250416",
 ]
 
 [project.scripts]
