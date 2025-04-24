@@ -1,5 +1,3 @@
-import subprocess
-
 from docker import from_env
 from docker.types import Mount
 from pydantic import BaseModel
@@ -14,46 +12,7 @@ class ProcessResult(BaseModel):
 
     @property
     def success(self) -> bool:
-        return not self.exit_code
-
-    @property
-    def failure(self) -> bool:
-        return bool(self.exit_code)
-
-
-def run_restic(
-    repo: Repo, *args: str, binary: str = "/usr/bin/restic"
-) -> ProcessResult:
-    result = subprocess.run(
-        [binary, *args],
-        env=repo.env,
-        capture_output=True,
-    )
-    return ProcessResult(
-        exit_code=result.returncode,
-        stdout=result.stdout.decode(),
-        stderr=result.stderr.decode(),
-    )
-
-
-def check(repo: Repo) -> ProcessResult:
-    return run_restic(repo, "check")
-
-
-def backup(repo: Repo, path: str, tag: str) -> ProcessResult:
-    return run_restic(repo, "backup", path, "--tag", tag)
-
-
-def init(repo: Repo) -> ProcessResult:
-    return run_restic(repo, "init")
-
-
-def unlock(repo: Repo) -> ProcessResult:
-    return run_restic(repo, "unlock")
-
-
-def snapshots(repo: Repo, *args: str) -> ProcessResult:
-    return run_restic(repo, "snapshots", *args)
+        return self.exit_code == 0
 
 
 def run_docker_backup(
@@ -76,10 +35,10 @@ def run_docker_backup(
         detach=True,
         mounts=mounts,
     )
-    response = container.wait()
+    result = container.wait()
 
     return ProcessResult(
-        exit_code=response["StatusCode"],
+        exit_code=result["StatusCode"],
         stdout=container.logs(stdout=True, stderr=False, stream=False).decode(),
         stderr=container.logs(stdout=False, stderr=True, stream=False).decode(),
     )
