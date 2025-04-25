@@ -9,6 +9,14 @@ class RepositoryBase(BaseModel):
     path: str
     password: str
 
+    def __init_subclass__(cls, **kwargs: Unpack[ConfigDict]) -> None:
+        super().__init_subclass__(**kwargs)
+        kind_type = cls.__annotations__.get("kind")
+        if kind_type is None:
+            raise TypeError(f"{cls.__name__} must define a 'kind' field")
+        if getattr(kind_type, "__origin__", None) is not Literal:
+            raise TypeError(f"{cls.__name__}.kind must be of type Literal[...]")
+
     @property
     def env(self) -> dict[str, str]:
         return {
