@@ -1,6 +1,8 @@
-from typing import ClassVar, Literal, override
+from typing import Annotated, ClassVar, Literal, Unpack, override
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
+
+from backupd.docker import Mount
 
 
 class RepositoryBase(BaseModel):
@@ -25,12 +27,21 @@ class RepositoryBase(BaseModel):
         }
 
     @property
+    def mount(self) -> Mount | None:
+        return None
+
+    @property
     def preexec(self) -> str:
         return ":"  # No op
 
 
 class LocalRespository(RepositoryBase):
     kind: Literal["local"]
+
+    @property
+    @override
+    def mount(self) -> Mount:
+        return Mount(Target=self.path, Source=self.path, Type="bind", ReadOnly=False)
 
 
 class RcloneRepository(RepositoryBase):

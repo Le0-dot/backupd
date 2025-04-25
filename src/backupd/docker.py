@@ -17,6 +17,13 @@ async def client_dependency():
 Client = Annotated[Docker, Depends(client_dependency)]
 
 
+class Mount(TypedDict):
+    Target: str
+    Source: str
+    Type: Literal["bind", "volume", "tmpfs"]
+    ReadOnly: bool
+
+
 class Container(BaseModel):
     name: str
     volumes: list[str]
