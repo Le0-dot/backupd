@@ -1,9 +1,8 @@
-from collections.abc import Iterable
-from typing import Annotated
+from typing import Annotated, Any, Literal, Self, TypedDict
 
 from aiodocker import Docker, DockerError
 from fastapi import Depends
-from pydantic import BaseModel
+from pydantic import AfterValidator, BaseModel
 
 
 async def client_dependency():
@@ -25,26 +24,29 @@ class Mount(TypedDict):
 
 
 class Container(BaseModel):
-    name: str
+    name: Annotated[str, AfterValidator(lambda s: s.removeprefix("/"))]
     volumes: list[str]
 
+    @classmethod
+    def from_attrs(cls, attrs: dict[str, Any]) -> Self:
+        name = attrs["Name"]
+        mounts = attrs["Mounts"]
+        volumes = [mount["Name"] for mount in mounts if mount["Type"] == "volume"]
 
-def container_by_name(name: str, client: docker.DockerClient) -> Container | None:
+        return cls(name=name, volumes=volumes)
+
+
+async def container_by_name(name: str, client: Docker) -> Container | None:
     try:
-        container = client.containers.get(name)
-    except docker.errors.NotFound:
+        container = await client.containers.get(name)
+    except DockerError:
         return None
 
-    mounts: Iterable[dict[str, str]] = container.attrs["Mounts"]
-    volumes = filter(lambda mount: mount["Type"] == "volume", mounts)
-    names = map(lambda volume: volume["Name"], volumes)
-
-    return Container(name=name, volumes=list(names))
+    attrs = await container.show()
+    return Container.from_attrs(attrs)
 
 
-def list_containers(client: docker.DockerClient) -> list[Container]:
-    containers = client.containers.list()
-    names: Iterable[str] = map(lambda container: container.name, containers)
-
-    container_list = map(lambda name: container_by_name(name, client), names)
-    return list(filter(None, container_list))
+async def list_containers(client: Docker) -> list[Container]:
+    containers = await client.containers.list()
+    attrs_list = [await container.show() for container in containers]
+    return [Container.from_attrs(attrs) for attrs in attrs_list]
