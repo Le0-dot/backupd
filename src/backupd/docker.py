@@ -50,3 +50,30 @@ async def list_containers(client: Docker) -> list[Container]:
     containers = await client.containers.list()
     attrs_list = [await container.show() for container in containers]
     return [Container.from_attrs(attrs) for attrs in attrs_list]
+
+
+def configure_run(
+    image: str, mounts: list[Mount], env: dict[str, str], preexec: str
+) -> dict[str, Any]:
+    # mounts = [Mount(Target="/data", Source=volume, Type="volume", ReadOnly=True)]
+    return {
+        "Image": image,
+        "Entrypoint": "sh",
+        "Cmd": ["-c", f"{preexec}; restic check"],  # f"backup /data --tag {tag}"
+        "Env": [f"{key}={value}" for key, value in env.items()],
+        "HostConfig": {"Mounts": mounts},
+    }
+
+
+async def run_backup(
+    config: dict[str, Any],
+    client: Docker,
+) -> tuple[bool, str, str]:
+    container = await client.containers.run(config, name="backupd-worker")
+    result = await container.wait()
+
+    return (
+        result["StatusCode"] == 0,
+        "".join(await container.log(stdout=True)),
+        "".join(await container.log(stderr=True)),
+    )
