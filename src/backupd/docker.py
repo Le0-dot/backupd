@@ -1,17 +1,20 @@
 from collections.abc import Iterable
 from typing import Annotated
 
-import docker
-import docker.errors
+from aiodocker import Docker, DockerError
 from fastapi import Depends
 from pydantic import BaseModel
 
 
-def make_client() -> docker.DockerClient:
-    return docker.from_env()
+async def client_dependency():
+    client = Docker()
+    try:
+        yield client
+    finally:
+        await client.close()
 
 
-Client = Annotated[docker.DockerClient, Depends(make_client)]
+Client = Annotated[Docker, Depends(client_dependency)]
 
 
 class Container(BaseModel):
