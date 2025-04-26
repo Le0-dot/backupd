@@ -51,7 +51,9 @@ class RcloneRepository(RepositoryBase):
     @property
     @override
     def preexec(self) -> str:
-        return f"echo '{self.config}' > ${{HOME}}/.config/rclone/rclone.conf"
+        directory = "${HOME}/.config/rclone"
+        file = "rclone.conf"
+        return f"mkdir -p {directory} && echo '{self.config}' > {directory}/{file}"
 
 
 Repository = Annotated[LocalRepository | RcloneRepository, Field(discriminator="kind")]
