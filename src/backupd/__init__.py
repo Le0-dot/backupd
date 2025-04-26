@@ -31,6 +31,12 @@ async def post_backup(repository: Repository, client: Client, queue: AppQueue) -
     pass  # TODO: Add backup of all containers
 
 
+def list_from[T](value: T | None) -> list[T]:
+    if value is None:
+        return []
+    return [value]
+
+
 @app.post("/backup/{name}")
 async def post_backup_container(
     name: str,
