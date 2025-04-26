@@ -35,7 +35,7 @@ class RepositoryBase(BaseModel):
         return ":"  # No op
 
 
-class LocalRespository(RepositoryBase):
+class LocalRepository(RepositoryBase):
     kind: Literal["local"]
 
     @property
@@ -54,4 +54,4 @@ class RcloneRepository(RepositoryBase):
         return f"echo '{self.config}' > ${{HOME}}/.config/rclone/rclone.conf"
 
 
-Repository = Annotated[LocalRespository | RcloneRepository, Field(discriminator="kind")]
+Repository = Annotated[LocalRepository | RcloneRepository, Field(discriminator="kind")]
