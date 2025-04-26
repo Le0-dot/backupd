@@ -5,6 +5,7 @@ from backupd.docker import Client, Container, container_by_name, list_containers
 from backupd.repository import Repository
 
 app = FastAPI()
+app.mount("/metrics", make_asgi_app())
 
 
 @app.get("/container/{name}")
@@ -34,8 +35,3 @@ async def post_backup_container(
     client: Client,
 ) -> None:
     pass  # TODO: Add backup of individual container
-
-
-@app.get("/metrics")
-async def get_metrics() -> str:
-    return NotImplemented  # TODO: Add metrics to monitor the backups
