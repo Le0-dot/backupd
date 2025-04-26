@@ -5,7 +5,7 @@ from fastapi import Depends
 from pydantic import AfterValidator, BaseModel
 
 
-async def client_dependency():
+async def make_client():
     client = Docker()
     try:
         yield client
@@ -13,7 +13,7 @@ async def client_dependency():
         await client.close()
 
 
-Client = Annotated[Docker, Depends(client_dependency)]
+Client = Annotated[Docker, Depends(make_client)]
 
 
 class Mount(TypedDict):
