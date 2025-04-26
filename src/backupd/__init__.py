@@ -1,10 +1,13 @@
 from http import HTTPStatus
+
 from fastapi import FastAPI, Response
+from prometheus_client import make_asgi_app
 
 from backupd.docker import Client, Container, container_by_name, list_containers
 from backupd.repository import Repository
+from backupd.task_queue import AppQueue, queue_lifespan
 
-app = FastAPI()
+app = FastAPI(lifespan=queue_lifespan)
 app.mount("/metrics", make_asgi_app())
 
 
@@ -24,7 +27,7 @@ async def get_containers(client: Client) -> list[Container]:
 
 
 @app.post("/backup")
-async def post_backup(repository: Repository, client: Client) -> None:
+async def post_backup(repository: Repository, client: Client, queue: AppQueue) -> None:
     pass  # TODO: Add backup of all containers
 
 
@@ -33,5 +36,6 @@ async def post_backup_container(
     name: str,
     repository: Repository,
     client: Client,
+    queue: AppQueue,
 ) -> None:
     pass  # TODO: Add backup of individual container
