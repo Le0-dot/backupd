@@ -54,7 +54,7 @@ async def list_containers(client: Docker) -> list[Container]:
 
 def configure_backup(
     *,
-    image: str = "docker.io/instrumentisto/restic:0.18",
+    image: str,
     mounts: list[Mount],
     env: dict[str, str],
     preexec: str,
@@ -78,8 +78,10 @@ def configure_backup(
 async def run_container(
     config: dict[str, Any],
     name: str,
-    client: Docker,
+    # client: Docker,
 ) -> tuple[bool, str, str]:
+    client = Docker()  # TODO: Deal with client
+
     container = await client.containers.run(config, name=name)
 
     # See https://docs.docker.com/reference/api/engine/version/v1.49/#tag/Container/operation/ContainerWait
@@ -90,5 +92,7 @@ async def run_container(
     stderr = await container.log(stderr=True)
 
     await container.delete()
+
+    await client.close()  # TODO: Deal with client
 
     return exit_code == 0, "".join(stdout), "".join(stderr)
