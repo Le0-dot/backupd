@@ -52,14 +52,24 @@ async def list_containers(client: Docker) -> list[Container]:
     return [Container.from_attrs(attrs) for attrs in attrs_list]
 
 
-def configure_run(
-    image: str, mounts: list[Mount], env: dict[str, str], preexec: str
+def configure_backup(
+    *,
+    image: str = "docker.io/instrumentisto/restic:0.18",
+    mounts: list[Mount],
+    env: dict[str, str],
+    preexec: str,
+    backup_dir: str,
+    backup_tag: str,
 ) -> dict[str, Any]:
-    # mounts = [Mount(Target="/data", Source=volume, Type="volume", ReadOnly=True)]
+    # For more details see https://docs.docker.com/reference/api/engine/version/v1.49/#tag/Container/operation/ContainerCreate
     return {
         "Image": image,
         "Entrypoint": "sh",
-        "Cmd": ["-c", f"{preexec}; restic check"],  # f"backup /data --tag {tag}"
+        "Cmd": [
+            "-c",
+            f"{preexec} &&" + "restic check",  # NOTE: For testing purposes
+            # f"backup {backup_dir} --tag {backup_tag}",
+        ],
         "Env": [f"{key}={value}" for key, value in env.items()],
         "HostConfig": {"Mounts": mounts},
     }
