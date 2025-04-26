@@ -75,15 +75,20 @@ def configure_backup(
     }
 
 
-async def run_backup(
+async def run_container(
     config: dict[str, Any],
+    name: str,
     client: Docker,
 ) -> tuple[bool, str, str]:
-    container = await client.containers.run(config, name="backupd-worker")
-    result = await container.wait()
+    container = await client.containers.run(config, name=name)
 
-    return (
-        result["StatusCode"] == 0,
-        "".join(await container.log(stdout=True)),
-        "".join(await container.log(stderr=True)),
-    )
+    # See https://docs.docker.com/reference/api/engine/version/v1.49/#tag/Container/operation/ContainerWait
+    result = await container.wait()
+    exit_code = result["StatusCode"]
+
+    stdout = await container.log(stdout=True)
+    stderr = await container.log(stderr=True)
+
+    await container.delete()
+
+    return exit_code == 0, "".join(stdout), "".join(stderr)
