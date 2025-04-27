@@ -1,4 +1,3 @@
-from typing import Annotated, Any, Literal, Self, TypedDict
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from functools import wraps
@@ -78,6 +77,14 @@ class ContainerCreate(BaseModel):
         )
 
 
+class ContainerWait(BaseModel):
+    """
+    https://docs.docker.com/reference/api/engine/version/v1.49/#tag/Container/operation/ContainerWait
+    """
+
+    StatusCode: int
+
+
 class Container(BaseModel):
     name: Annotated[str, AfterValidator(lambda s: s.removeprefix("/"))]
     volumes: list[str]
@@ -116,9 +123,8 @@ async def run_container(
 ) -> dict[str, Any]:
     container = await client.containers.run(config.model_dump(), name=name)
 
-    # See https://docs.docker.com/reference/api/engine/version/v1.49/#tag/Container/operation/ContainerWait
-    result = await container.wait()
-    exit_code = result["StatusCode"]
+    result = ContainerWait.model_validate(await container.wait())
+    exit_code = result.StatusCode
 
     stdout = await container.log(stdout=True)
     stderr = await container.log(stderr=True)
