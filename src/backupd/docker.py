@@ -16,6 +16,17 @@ async def make_client():
 Client = Annotated[Docker, Depends(make_client)]
 
 
+def with_client[**P, T](
+    callee: Callable[Concatenate[Docker, P], Awaitable[T]],
+) -> Callable[P, Awaitable[T]]:
+    @wraps(callee)
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+        async with asynccontextmanager(make_client)() as client:
+            return await callee(client, *args, **kwargs)
+
+    return wrapper
+
+
 class Mount(BaseModel):
     Target: str
     Source: str
@@ -75,12 +86,12 @@ def configure_backup(
     }
 
 
+@with_client
 async def run_container(
-    config: dict[str, Any],
+    client: Docker,
+    config: ContainerCreate,
     name: str,
-    # client: Docker,
 ) -> tuple[bool, str, str]:
-    client = Docker()  # TODO: Deal with client
 
     container = await client.containers.run(config, name=name)
 
@@ -92,7 +103,5 @@ async def run_container(
     stderr = await container.log(stderr=True)
 
     await container.delete()
-
-    await client.close()  # TODO: Deal with client
 
     return exit_code == 0, "".join(stdout), "".join(stderr)
