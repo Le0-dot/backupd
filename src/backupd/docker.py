@@ -1,4 +1,8 @@
 from typing import Annotated, Any, Literal, Self, TypedDict
+from collections.abc import Awaitable, Callable
+from contextlib import asynccontextmanager
+from functools import wraps
+from typing import Annotated, Any, Concatenate, Literal, Self
 
 from aiodocker import Docker, DockerError
 from fastapi import Depends
@@ -23,6 +27,18 @@ def with_client[**P, T](
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
         async with asynccontextmanager(make_client)() as client:
             return await callee(client, *args, **kwargs)
+
+    return wrapper
+
+
+def log_result[**P](
+    callee: Callable[P, Awaitable[dict[str, Any]]],
+) -> Callable[P, Awaitable[None]]:
+    @wraps(callee)
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> None:
+        result = await callee(*args, **kwargs)
+        for key, value in result.items():
+            print(f"{key} = {value!r}")
 
     return wrapper
 
@@ -86,12 +102,13 @@ def configure_backup(
     }
 
 
+@log_result
 @with_client
 async def run_container(
     client: Docker,
     config: ContainerCreate,
     name: str,
-) -> tuple[bool, str, str]:
+) -> dict[str, Any]:
 
     container = await client.containers.run(config, name=name)
 
@@ -104,4 +121,8 @@ async def run_container(
 
     await container.delete()
 
-    return exit_code == 0, "".join(stdout), "".join(stderr)
+    return {
+        "success": exit_code == 0,
+        "stdout": "".join(stdout),
+        "stderr": "".join(stderr),
+    }
