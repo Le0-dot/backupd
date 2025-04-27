@@ -65,7 +65,7 @@ async def post_backup_container(
     response: Response,
     client: Client,
     queue: AppQueue,
-) -> None:
+) -> Container | None:
     container = await container_by_name(client, name)
     if container is None:
         response.status_code = HTTPStatus.NOT_FOUND
@@ -75,12 +75,18 @@ async def post_backup_container(
     for config in configs:
         await queue.put(run_container, config, "backup")
 
+    return container
+
 
 @app.post("/backup")
-async def post_backup(repository: Repository, client: Client, queue: AppQueue) -> None:
+async def post_backup(
+    repository: Repository, client: Client, queue: AppQueue
+) -> list[Container]:
     containers = await list_containers(client)
     configs = map(
         lambda container: configure_container_backup(container, repository), containers
     )
     for config in chain.from_iterable(configs):
         await queue.put(run_container, config, "backup")
+
+    return containers
