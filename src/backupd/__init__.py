@@ -1,5 +1,6 @@
 from collections.abc import Iterable
 from http import HTTPStatus
+from itertools import chain
 
 from fastapi import FastAPI, Response
 from prometheus_client import make_asgi_app
@@ -35,11 +36,6 @@ async def get_container(
 @app.get("/containers")
 async def get_containers(client: Client) -> list[Container]:
     return await list_containers(client)
-
-
-@app.post("/backup")
-async def post_backup(repository: Repository, client: Client, queue: AppQueue) -> None:
-    pass  # TODO: Add backup of all containers
 
 
 def configure_container_backup(
@@ -78,4 +74,13 @@ async def post_backup_container(
     configs = configure_container_backup(container, repository)
     for config in configs:
         await queue.put(run_container, config, "backup")
+
+
+@app.post("/backup")
+async def post_backup(repository: Repository, client: Client, queue: AppQueue) -> None:
+    containers = await list_containers(client)
+    configs = map(
+        lambda container: configure_container_backup(container, repository), containers
     )
+    for config in chain.from_iterable(configs):
+        await queue.put(run_container, config, "backup")
