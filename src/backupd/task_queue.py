@@ -1,21 +1,24 @@
 from asyncio import CancelledError, Queue, Task, create_task
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Request
+
+Callee = Callable[..., Awaitable[None]]
+Job = tuple[Callee, tuple[Any, ...], dict[str, Any]]
 
 
 class TaskQueue:
     def __init__(self) -> None:
-        self._queue: Queue[Awaitable[None]] = Queue()
+        self._queue: Queue[Job] = Queue()
         self._task: Task[None] | None = None
 
     async def start(self) -> None:
         self._task = create_task(self._worker())
 
-    async def put(self, job: Awaitable[None]) -> None:
-        await self._queue.put(job)
+    async def put(self, callee: Callee, *args: Any, **kwargs: Any) -> None:
+        await self._queue.put((callee, args, kwargs))
 
     async def shutdown(self) -> None:
         if self._task is None:
@@ -31,9 +34,9 @@ class TaskQueue:
 
     async def _worker(self) -> None:
         while True:
-            job = await self._queue.get()
+            callee, args, kwargs = await self._queue.get()
             try:
-                await job
+                await callee(*args, **kwargs)
             except Exception as e:
                 print(e)
             finally:
