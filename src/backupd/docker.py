@@ -16,7 +16,7 @@ async def make_client():
 Client = Annotated[Docker, Depends(make_client)]
 
 
-class Mount(TypedDict):
+class Mount(BaseModel):
     Target: str
     Source: str
     Type: Literal["bind", "volume", "tmpfs"]
