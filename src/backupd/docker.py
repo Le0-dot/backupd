@@ -50,6 +50,34 @@ class Mount(BaseModel):
     ReadOnly: bool
 
 
+class HostConfig(BaseModel):
+    Mounts: list[Mount]
+
+
+class ContainerCreate(BaseModel):
+    """
+    https://docs.docker.com/reference/api/engine/version/v1.49/#tag/Container/operation/ContainerCreate
+    """
+
+    Image: str
+    Entrypoint: str
+    Cmd: list[str]
+    Env: list[str]
+    HostConfig: HostConfig
+
+    @classmethod
+    def shell(
+        cls, *, image: str, cmd: str, env: dict[str, str], mounts: list[Mount | None]
+    ) -> Self:
+        return cls(
+            Image=image,
+            Entrypoint="sh",
+            Cmd=["-c", cmd],
+            Env=[f"{key}={value}" for key, value in env.items()],
+            HostConfig=HostConfig(Mounts=list(filter(None, mounts))),
+        )
+
+
 class Container(BaseModel):
     name: Annotated[str, AfterValidator(lambda s: s.removeprefix("/"))]
     volumes: list[str]
@@ -63,7 +91,7 @@ class Container(BaseModel):
         return cls(name=name, volumes=volumes)
 
 
-async def container_by_name(name: str, client: Docker) -> Container | None:
+async def container_by_name(client: Docker, name: str) -> Container | None:
     try:
         container = await client.containers.get(name)
     except DockerError:
@@ -79,29 +107,6 @@ async def list_containers(client: Docker) -> list[Container]:
     return [Container.from_attrs(attrs) for attrs in attrs_list]
 
 
-def configure_backup(
-    *,
-    image: str,
-    mounts: list[Mount],
-    env: dict[str, str],
-    preexec: str,
-    backup_dir: str,
-    backup_tag: str,
-) -> dict[str, Any]:
-    # For more details see https://docs.docker.com/reference/api/engine/version/v1.49/#tag/Container/operation/ContainerCreate
-    return {
-        "Image": image,
-        "Entrypoint": "sh",
-        "Cmd": [
-            "-c",
-            f"{preexec} &&" + "restic check",  # NOTE: For testing purposes
-            # f"backup {backup_dir} --tag {backup_tag}",
-        ],
-        "Env": [f"{key}={value}" for key, value in env.items()],
-        "HostConfig": {"Mounts": mounts},
-    }
-
-
 @log_result
 @with_client
 async def run_container(
@@ -109,8 +114,7 @@ async def run_container(
     config: ContainerCreate,
     name: str,
 ) -> dict[str, Any]:
-
-    container = await client.containers.run(config, name=name)
+    container = await client.containers.run(config.model_dump(), name=name)
 
     # See https://docs.docker.com/reference/api/engine/version/v1.49/#tag/Container/operation/ContainerWait
     result = await container.wait()

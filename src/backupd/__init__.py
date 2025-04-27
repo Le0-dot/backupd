@@ -6,8 +6,8 @@ from prometheus_client import make_asgi_app
 from backupd.docker import (
     Client,
     Container,
+    ContainerCreate,
     Mount,
-    configure_backup,
     container_by_name,
     list_containers,
     run_container,
@@ -25,7 +25,7 @@ docker_image = "docker.io/instrumentisto/restic:0.18"
 async def get_container(
     name: str, response: Response, client: Client
 ) -> Container | None:
-    container = await container_by_name(name, client)
+    container = await container_by_name(client, name)
     if container is None:
         response.status_code = HTTPStatus.NOT_FOUND
     return container
