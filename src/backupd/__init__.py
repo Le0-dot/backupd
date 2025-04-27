@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from http import HTTPStatus
 
 from fastapi import FastAPI, Response
@@ -41,10 +42,24 @@ async def post_backup(repository: Repository, client: Client, queue: AppQueue) -
     pass  # TODO: Add backup of all containers
 
 
-def list_from[T](value: T | None) -> list[T]:
-    if value is None:
-        return []
-    return [value]
+def configure_container_backup(
+    container: Container, repository: Repository
+) -> Iterable[ContainerCreate]:
+    backup_dir = "/data"
+    return map(
+        lambda volume: ContainerCreate.shell(
+            image=docker_image,
+            cmd=f"{repository.preexec} &&" + "echo 123",  # NOTE: For testing purposes
+            # cmd=f"{repository.preexec} && restic check",
+            # cmd=f"{repository.preexec} && backup {backup_dir} --tag backupd:{container.name}:{volume}",
+            env=repository.env,
+            mounts=[
+                repository.mount,
+                Mount(Target=backup_dir, Source=volume, Type="volume", ReadOnly=True),
+            ],
+        ),
+        container.volumes,
+    )
 
 
 @app.post("/backup/{name}")
@@ -55,27 +70,12 @@ async def post_backup_container(
     client: Client,
     queue: AppQueue,
 ) -> None:
-    container = await container_by_name(name, client)
+    container = await container_by_name(client, name)
     if container is None:
         response.status_code = HTTPStatus.NOT_FOUND
         return
 
-    configs = (
-        configure_backup(
-            image=docker_image,
-            mounts=list_from(repository.mount)
-            + [Mount(Target="/data", Source=volume, Type="volume", ReadOnly=True)],
-            env=repository.env,
-            preexec=repository.preexec,
-            backup_dir="/data",
-            backup_tag=f"backupd:{container.name}:{volume}",
-        )
-        for volume in container.volumes
+    configs = configure_container_backup(container, repository)
+    for config in configs:
+        await queue.put(run_container, config, "backup")
     )
-    backups = (
-        run_container(config, "backup") for config in configs
-    )  # Cannot pass current client as it will be closed by the time the coroutine is executed
-    for backup in backups:
-        await queue.put(
-            backup
-        )  # TODO: Make wrapper function that will log, add metrics, etc. to the backup and return None
