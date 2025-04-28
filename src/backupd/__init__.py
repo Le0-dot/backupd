@@ -1,9 +1,8 @@
-from collections.abc import Iterable
+from contextlib import asynccontextmanager
 from http import HTTPStatus
 from itertools import chain
 
 from fastapi import FastAPI, Response
-from prometheus_client import make_asgi_app
 
 from backupd.docker import (
     Client,
@@ -14,11 +13,18 @@ from backupd.docker import (
     list_containers,
     run_container,
 )
+from backupd.metrics import AppMetrics, instrument_backup, metrics_lifespan
 from backupd.repository import Repository
 from backupd.task_queue import AppQueue, queue_lifespan
 
-app = FastAPI(lifespan=queue_lifespan)
-app.mount("/metrics", make_asgi_app())
+
+@asynccontextmanager
+async def app_lifespan(app: FastAPI):
+    async with metrics_lifespan(app), queue_lifespan(app):
+        yield
+
+
+app = FastAPI(lifespan=app_lifespan)
 
 docker_image = "docker.io/instrumentisto/restic:0.18"
 
@@ -38,23 +44,20 @@ async def get_containers(client: Client) -> list[Container]:
     return await list_containers(client)
 
 
-def configure_container_backup(
-    container: Container, repository: Repository
-) -> Iterable[ContainerCreate]:
+def configure_backup(
+    container: str, volume: str, repository: Repository
+) -> ContainerCreate:
     backup_dir = "/data"
-    return map(
-        lambda volume: ContainerCreate.shell(
-            image=docker_image,
-            cmd=f"{repository.preexec} &&" + "echo 123",  # NOTE: For testing purposes
-            # cmd=f"{repository.preexec} && restic check",
-            # cmd=f"{repository.preexec} && backup {backup_dir} --tag backupd:{container.name}:{volume}",
-            env=repository.env,
-            mounts=[
-                repository.mount,
-                Mount(Target=backup_dir, Source=volume, Type="volume", ReadOnly=True),
-            ],
-        ),
-        container.volumes,
+    return ContainerCreate.shell(
+        image=docker_image,
+        cmd=f"{repository.preexec} &&" + "echo 123",  # NOTE: For testing purposes
+        # cmd=f"{repository.preexec} && restic check",
+        # cmd=f"{repository.preexec} && backup {backup_dir} --tag backupd:{container}:{volume}",
+        env=repository.env,
+        mounts=[
+            repository.mount,
+            Mount(Target=backup_dir, Source=volume, Type="volume", ReadOnly=True),
+        ],
     )
 
 
@@ -65,28 +68,31 @@ async def post_backup_container(
     response: Response,
     client: Client,
     queue: AppQueue,
+    metrics: AppMetrics,
 ) -> Container | None:
     container = await container_by_name(client, name)
     if container is None:
         response.status_code = HTTPStatus.NOT_FOUND
         return
 
-    configs = configure_container_backup(container, repository)
-    for config in configs:
-        await queue.put(run_container, config, "backup")
+    for volume in container.volumes:
+        backup = instrument_backup(metrics, run_container, name, volume)
+        configuration = configure_backup(name, volume, repository)
+        await queue.put(backup, configuration, "backup")
 
     return container
 
 
 @app.post("/backup")
 async def post_backup(
-    repository: Repository, client: Client, queue: AppQueue
+    repository: Repository, client: Client, queue: AppQueue, metrics: AppMetrics
 ) -> list[Container]:
     containers = await list_containers(client)
-    configs = map(
-        lambda container: configure_container_backup(container, repository), containers
-    )
-    for config in chain.from_iterable(configs):
-        await queue.put(run_container, config, "backup")
+    containers_info = chain.from_iterable(map(Container.iter_volumes, containers))
+
+    for container, volume in containers_info:
+        backup = instrument_backup(metrics, run_container, container, volume)
+        configuration = configure_backup(container, volume, repository)
+        await queue.put(backup, configuration, "backup")
 
     return containers
