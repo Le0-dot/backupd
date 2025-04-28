@@ -1,7 +1,8 @@
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from contextlib import asynccontextmanager
 from functools import wraps
-from typing import Annotated, Any, Concatenate, Literal, Self
+from itertools import repeat
+from typing import Annotated, Any, Concatenate, Literal, NamedTuple, Self
 
 from aiodocker import Docker, DockerError
 from fastapi import Depends
@@ -26,18 +27,6 @@ def with_client[**P, T](
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
         async with asynccontextmanager(make_client)() as client:
             return await callee(client, *args, **kwargs)
-
-    return wrapper
-
-
-def log_result[**P](
-    callee: Callable[P, Awaitable[dict[str, Any]]],
-) -> Callable[P, Awaitable[None]]:
-    @wraps(callee)
-    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> None:
-        result = await callee(*args, **kwargs)
-        for key, value in result.items():
-            print(f"{key} = {value!r}")
 
     return wrapper
 
@@ -89,6 +78,9 @@ class Container(BaseModel):
     name: Annotated[str, AfterValidator(lambda s: s.removeprefix("/"))]
     volumes: list[str]
 
+    def iter_volumes(self) -> Iterable[tuple[str, str]]:
+        return zip(repeat(self.name), self.volumes)
+
     @classmethod
     def from_attrs(cls, attrs: dict[str, Any]) -> Self:
         name = attrs["Name"]
@@ -114,13 +106,18 @@ async def list_containers(client: Docker) -> list[Container]:
     return [Container.from_attrs(attrs) for attrs in attrs_list]
 
 
-@log_result
+class ContainerRunResult(NamedTuple):
+    success: bool
+    stdout: str
+    stderr: str
+
+
 @with_client
 async def run_container(
     client: Docker,
     config: ContainerCreate,
     name: str,
-) -> dict[str, Any]:
+) -> ContainerRunResult:
     container = await client.containers.run(config.model_dump(), name=name)
 
     result = ContainerWait.model_validate(await container.wait())
@@ -131,8 +128,4 @@ async def run_container(
 
     await container.delete()
 
-    return {
-        "success": exit_code == 0,
-        "stdout": "".join(stdout),
-        "stderr": "".join(stderr),
-    }
+    return ContainerRunResult(exit_code == 0, "".join(stdout), "".join(stderr))
