@@ -62,7 +62,7 @@ def get_task_queue(request: Request) -> TaskQueue:
     try:
         queue = app.state.queue
     except KeyError:
-        raise TypeError("queue does not exists in application")
+        raise TypeError("queue does not exist in application")
 
     if not isinstance(queue, TaskQueue):
         raise TypeError("queue is not an instance of TaskQueue")
