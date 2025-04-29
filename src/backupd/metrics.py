@@ -1,48 +1,63 @@
 from collections.abc import Awaitable
 from contextlib import asynccontextmanager
-from typing import Annotated, Callable, TypedDict
+from typing import Annotated, Callable, TypedDict, override
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Request, Response
 from prometheus_client import Counter, Gauge, Summary, make_asgi_app
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from backupd.docker import ContainerRunResult
 
 
 class Metrics(TypedDict):
-    success: Counter
-    failure: Counter
-    time: Summary
-    scheduled: Gauge
+    api_calls: Counter
+
+    backup_success: Counter
+    backup_failure: Counter
+    backup_time: Summary
+
+    job_scheduled: Gauge
 
 
 @asynccontextmanager
 async def metrics_lifespan(app: FastAPI):
     app.mount("/metrics", make_asgi_app())
     app.state.metrics = Metrics(
-        success=Counter(
-            "success",
-            "Number of backups completed successfully",
-            ("container", "volume"),
+        api_calls=Counter(
+            name="calls",
+            documentation="Number of api calls completed successfully",
+            labelnames=("path", "method", "status"),
             namespace="backupd",
+            subsystem="api",
         ),
-        failure=Counter(
-            "failure",
-            "Number of backups resulted in failure",
-            ("container", "volume"),
+        backup_success=Counter(
+            name="success",
+            documentation="Number of backups completed successfully",
+            labelnames=("container", "volume"),
             namespace="backupd",
+            subsystem="backup",
         ),
-        time=Summary(
-            "backup",
-            "Time it took to run the backup",
-            ("container", "volume"),
+        backup_failure=Counter(
+            name="failure",
+            documentation="Number of backups resulted in failure",
+            labelnames=("container", "volume"),
+            namespace="backupd",
+            subsystem="backup",
+        ),
+        backup_time=Summary(
+            name="time",
+            documentation="Time it took to run the backup",
+            labelnames=("container", "volume"),
             unit="seconds",
             namespace="backupd",
+            subsystem="backup",
         ),
-        scheduled=Gauge(
-            "scheduled",
-            "Number of job in the queue scheduled to run",
-            ("job_type", "container", "volume"),
+        job_scheduled=Gauge(
+            name="scheduled",
+            documentation="Number of job in the queue scheduled to run",
+            labelnames=("job_type", "container", "volume"),
             namespace="backupd",
+            subsystem="job",
         ),
     )
 
@@ -67,12 +82,12 @@ AppMetrics = Annotated[Metrics, Depends(get_metrics)]
 def instrument_backup[**P](
     metrics: Metrics,
     callee: Callable[P, Awaitable[ContainerRunResult]],
-    *labels: str,
+    **labels: str,
 ) -> Callable[P, Awaitable[None]]:
-    success = metrics["success"].labels(*labels)
-    failure = metrics["failure"].labels(*labels)
-    time = metrics["time"].labels(*labels)
-    scheduled = metrics["scheduled"].labels("backup", *labels)
+    success = metrics["backup_success"].labels(*labels)
+    failure = metrics["backup_failure"].labels(*labels)
+    time = metrics["backup_time"].labels(*labels)
+    scheduled = metrics["job_scheduled"].labels("backup", *labels)
 
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> None:
         with time.time():
@@ -88,3 +103,18 @@ def instrument_backup[**P](
 
     scheduled.inc()
     return wrapper
+
+
+class APIMetricsMiddleware(BaseHTTPMiddleware):
+    @override
+    async def dispatch(
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        response = await call_next(request)
+
+        metric = get_metrics(request)["api_calls"]
+        metric.labels(
+            path=request.url.path, method=request.method, status=response.status_code
+        ).inc()
+
+        return response
