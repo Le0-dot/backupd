@@ -13,8 +13,14 @@ from backupd.docker import (
     list_containers,
     run_container,
 )
-from backupd.metrics import AppMetrics, APIMetricsMiddleware, instrument_backup, metrics_lifespan
+from backupd.metrics import (
+    AppMetrics,
+    APIMetricsMiddleware,
+    instrument_backup,
+    metrics_lifespan,
+)
 from backupd.repository import Repository
+from backupd.settings import Settings
 from backupd.task_queue import AppQueue, queue_lifespan
 
 
@@ -26,8 +32,6 @@ async def app_lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=app_lifespan)
 app.add_middleware(APIMetricsMiddleware)
-
-docker_image = "docker.io/instrumentisto/restic:0.18"
 
 
 @app.get("/container/{name}")
@@ -50,7 +54,7 @@ def configure_backup(
 ) -> ContainerCreate:
     backup_dir = "/data"
     return ContainerCreate.shell(
-        image=docker_image,
+        image=Settings().runner_image,
         cmd=f"{repository.preexec} &&" + "echo 123",  # NOTE: For testing purposes
         # cmd=f"{repository.preexec} && restic check",
         # cmd=f"{repository.preexec} && backup {backup_dir} --tag backupd:{container}:{volume}",
@@ -77,7 +81,9 @@ async def post_backup_container(
         return
 
     for volume in container.volumes:
-        backup = instrument_backup(metrics, run_container, container=name, volume=volume)
+        backup = instrument_backup(
+            metrics, run_container, container=name, volume=volume
+        )
         configuration = configure_backup(name, volume, repository)
         await queue.put(backup, configuration, "backup")
 
@@ -92,7 +98,9 @@ async def post_backup(
     containers_info = chain.from_iterable(map(Container.iter_volumes, containers))
 
     for container, volume in containers_info:
-        backup = instrument_backup(metrics, run_container, container=container, volume=volume)
+        backup = instrument_backup(
+            metrics, run_container, container=container, volume=volume
+        )
         configuration = configure_backup(container, volume, repository)
         await queue.put(backup, configuration, "backup")
 
