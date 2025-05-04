@@ -3,45 +3,41 @@ from contextlib import asynccontextmanager
 from typing import Callable, override
 
 from fastapi import FastAPI, Request, Response
-from prometheus_client import Counter, Gauge, Summary, make_asgi_app
+from prometheus_client import Counter, Gauge, Histogram, Summary, make_asgi_app
 from starlette.middleware.base import BaseHTTPMiddleware
 
 
 api_calls = Counter(
-    name="calls",
+    name="api_calls",
     documentation="Number of api calls completed successfully",
     labelnames=("path", "method", "status"),
     namespace="backupd",
-    subsystem="api",
 )
-backup_success = Counter(
-    name="success",
-    documentation="Number of backups completed successfully",
-    labelnames=("container", "volume"),
-    namespace="backupd",
-    subsystem="backup",
-)
-backup_failure = Counter(
-    name="failure",
-    documentation="Number of backups resulted in failure",
-    labelnames=("container", "volume"),
-    namespace="backupd",
-    subsystem="backup",
-)
-backup_time = Summary(
-    name="time",
-    documentation="Time it took to run the backup",
+backup_start = Gauge(
+    name="backup_last_start_timestamp",
+    documentation="Timestamp of the last started backup",
     labelnames=("container", "volume"),
     unit="seconds",
     namespace="backupd",
-    subsystem="backup",
 )
-jobs = Gauge(
-    name="scheduled",
-    documentation="Number of job in the queue scheduled to run",
-    labelnames=("kind", "creation_time", "container", "volume"),
+backup_result = Counter(
+    name="backup_result",
+    documentation="Total number of completed backups",
+    labelnames=("container", "volume", "status"),
     namespace="backupd",
-    subsystem="job",
+)
+backup_duration = Histogram(
+    name="backup",
+    documentation="Time it took to run the backup",
+    labelnames=("container", "volume", "status"),
+    unit="seconds",
+    namespace="backupd",
+)
+job_state = Gauge(
+    name="job_state",
+    documentation="Number of job in the queue scheduled to run",
+    labelnames=("kind", "state"),
+    namespace="backupd",
 )
 
 
