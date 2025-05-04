@@ -1,12 +1,11 @@
 from asyncio import CancelledError, Queue, Task, create_task
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request
 
-Callee = Callable[..., Awaitable[None]]
-Job = tuple[Callee, tuple[Any, ...], dict[str, Any]]
+type Job = Callable[[], Awaitable[None]]
 
 
 class TaskQueue:
@@ -14,11 +13,12 @@ class TaskQueue:
         self._queue: Queue[Job] = Queue()
         self._task: Task[None] | None = None
 
-    async def start(self) -> None:
+    def start(self) -> None:
         self._task = create_task(self._worker())
 
-    async def put(self, callee: Callee, *args: Any, **kwargs: Any) -> None:
-        await self._queue.put((callee, args, kwargs))
+    async def put(self, *jobs: Job) -> None:
+        for job in jobs:
+            await self._queue.put(job)
 
     async def shutdown(self) -> None:
         if self._task is None:
@@ -34,9 +34,9 @@ class TaskQueue:
 
     async def _worker(self) -> None:
         while True:
-            callee, args, kwargs = await self._queue.get()
+            job = await self._queue.get()
             try:
-                await callee(*args, **kwargs)
+                await job()
             except Exception as e:
                 print(e)
             finally:
@@ -45,14 +45,12 @@ class TaskQueue:
 
 @asynccontextmanager
 async def queue_lifespan(app: FastAPI):
-    queue = TaskQueue()
-    await queue.start()
-
-    app.state.queue = queue
+    app.state.queue = TaskQueue()
+    app.state.queue.start()
 
     yield
 
-    await queue.shutdown()
+    await app.state.queue.shutdown()
 
 
 def get_task_queue(request: Request) -> TaskQueue:
