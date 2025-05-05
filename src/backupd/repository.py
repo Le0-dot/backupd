@@ -8,7 +8,7 @@ from backupd.docker import Mount
 class RepositoryBase(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
 
-    path: str
+    location: str
     password: str
 
     def __init_subclass__(cls, **kwargs: Unpack[ConfigDict]) -> None:
