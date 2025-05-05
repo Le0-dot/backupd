@@ -1,5 +1,5 @@
 from functools import partial
-from timeit import default_timer
+from time import time
 from typing import Self
 
 from aiodocker import Docker
@@ -27,11 +27,9 @@ class BackupJob:
     ) -> None:
         self.config: ContainerCreate = ContainerCreate.shell(
             image=Settings().runner_image,
-            cmd=f"{repository.preexec} &&"
-            + f"echo {container_name} {volume}",  # NOTE: For testing purposes
-            # cmd=f"{repository.preexec} && restic check",
-            # cmd=f"{repository.preexec} && backup /data --tag backupd:{container}:{volume}",
-            env=repository.env,
+            cmd=f"{repository.preexec} && restic --verbose backup --group-by tags "
+            + f"--tag backupd --tag container:{container_name} --tag volume:{volume} /data",
+            env=repository.env | {"RESTIC_HOST": Settings().hostname},
             mounts=[
                 repository.mount,
                 Mount(Target="/data", Source=volume, Type="volume", ReadOnly=True),
@@ -54,9 +52,9 @@ class BackupJob:
         self.job(state="started").inc()
 
         async with Docker() as client:
-            start_time = default_timer()
+            start_time = time()
             result = await run_container(client, self.config, "backup")
-            finish_time = default_timer()
+            finish_time = time()
 
         run_time = max(finish_time - start_time, 0)
 
