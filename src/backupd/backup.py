@@ -1,8 +1,8 @@
-from collections.abc import Callable
 from functools import partial
 from timeit import default_timer
 from typing import Self
 
+from aiodocker import Docker
 from prometheus_client import Counter, Gauge, Histogram
 
 from backupd.docker import (
@@ -53,16 +53,17 @@ class BackupJob:
         self.job(state="created").dec()
         self.job(state="started").inc()
 
-        start_time = default_timer()
-        result = await run_container(self.config, "backup")
-        finish_time = default_timer()
+        async with Docker() as client:
+            start_time = default_timer()
+            result = await run_container(client, self.config, "backup")
+            finish_time = default_timer()
 
         run_time = max(finish_time - start_time, 0)
 
         self.job(state="started").dec()
         self.job(state="finished").inc()
 
-        status = {True: "success", False: "failure"}[result.success]
+        status = "success" if result.success else "failure"
 
         self.start.set(start_time)
         self.result(status=status).inc()

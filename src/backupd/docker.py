@@ -1,8 +1,6 @@
-from collections.abc import Awaitable, Callable, Iterable
-from contextlib import asynccontextmanager
-from functools import wraps
+from collections.abc import Iterable
 from itertools import repeat
-from typing import Annotated, Any, Concatenate, Literal, NamedTuple, Self
+from typing import Annotated, Any, Literal, NamedTuple, Self
 
 from aiodocker import Docker, DockerError
 from fastapi import Depends
@@ -18,17 +16,6 @@ async def make_client():
 
 
 Client = Annotated[Docker, Depends(make_client)]
-
-
-def with_client[**P, T](
-    callee: Callable[Concatenate[Docker, P], Awaitable[T]],
-) -> Callable[P, Awaitable[T]]:
-    @wraps(callee)
-    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-        async with asynccontextmanager(make_client)() as client:
-            return await callee(client, *args, **kwargs)
-
-    return wrapper
 
 
 class Mount(BaseModel):
@@ -112,7 +99,6 @@ class ContainerRunResult(NamedTuple):
     stderr: str
 
 
-@with_client
 async def run_container(
     client: Docker,
     config: ContainerCreate,
