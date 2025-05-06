@@ -11,13 +11,21 @@ docker pull ghcr.io/le0-dot/backupd:<tag>
 
 ## Usage
 
-> [!NOTE]
-> Backupd requires mounting docker socket or providing DOCKER_HOST environment variable
+### Configuration
+
+Backupd is configured only with environment variables.
+
+- `BACKUPD_RUNNER_IMAGE` - image that will be runnning the backups, should include executables for `sh`, `restic` and optionally `rclone` if used.
+- `BACKUPD_HOSTNAME` (Optional, default: `backupd`) - hostname that will be set for backup in restic.
+- `DOCKER_HOST` (Optional) - should be used if you do not wish to mount docker socket directly to the container, see [docker documentation](https://docs.docker.com/reference/cli/docker/#environment-variables)
+
+
+### Endpoints
 
 > [!WARNING]
 > Backupd schedules start of docker container on HTTP request, which could lead to security risks if exposed to the internet. Due to this, it is recommened to limit access to the backupd service.
 
-Backupd exposes couple of HTTP endpoints:
+Backupd exposes a number of HTTP endpoints:
 - GET `/containers` to list all container available to the backupd
 - GET `/container/{name}` to see name and volumes of the specific container
 - POST `/backup` to schedule backup of volumes for all **running** docker containers
@@ -41,8 +49,8 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock # Or set DOCKER_HOST
     environment:
-      - BACKUPD_RUNNER_IMAGE=docker.io/instrumentisto/restic:0.18.0
-      # - BACKUPD_HOSTNAME=... # Optional (default: backupd)
+      - BACKUPD_RUNNER_IMAGE=docker.io/instrumentisto/restic:0.18.0 # Includes restic and rclone
+      # - BACKUPD_HOSTNAME=...
       # - DOCKER_HOST=...
 ```
 
@@ -52,6 +60,9 @@ curl -X POST http://localhost:9988/backup --json '{"kind": "local", "location": 
 ```
 
 ### Systemd Service and Timer to trigger backups
+
+#### backup@.service
+
 ```ini file=backup@.service
 [Unit]
 Description=Trigger backup of docker volumes to repository in %I
@@ -60,6 +71,8 @@ Description=Trigger backup of docker volumes to repository in %I
 Type=oneshot
 ExecStart=/usr/bin/curl -X POST http://localhost:9988/backup --json '@%I'
 ```
+
+#### backup@.timer
 
 ```ini file=backup@.timer
 [Unit]
@@ -74,13 +87,18 @@ Unit=backup@%i.service
 WantedBy=default.target
 ```
 
-Put the repository configuration in repo.json wherever you want. Then run
+#### Starting the timer
+Put the repository configuration in repo.json wherever you want. Then run the following command to start and enable the service with escaped file path as parameter.
 ```sh
-systemd-escape /full/path/to/repo.json --template backup@.timer
+systemctl enable --now $(systemd-escape /full/path/to/repo.json --template backup@.timer)
 ```
 
-This will return the name of the timer you need to enable and start.
-
+To verify that timer works run
 ```sh
-systemdctl enable --now backup@-fill-path-to-repo.json.timer
+systemctl status $(systemd-escape /full/path/to/repo.json --template backup@.timer)
+```
+
+To verify check the service run
+```sh
+systemctl status $(systemd-escape /full/path/to/repo.json --template backup@.service)
 ```
