@@ -22,7 +22,7 @@ class RepositoryBase(BaseModel):
     @property
     def env(self) -> dict[str, str]:
         return {
-            "RESTIC_REPOSITORY": self.path,
+            "RESTIC_REPOSITORY": self.location,
             "RESTIC_PASSWORD": self.password,
         }
 
@@ -41,7 +41,9 @@ class LocalRepository(RepositoryBase):
     @property
     @override
     def mount(self) -> Mount:
-        return Mount(Target=self.path, Source=self.path, Type="bind", ReadOnly=False)
+        return Mount(
+            Target=self.location, Source=self.location, Type="bind", ReadOnly=False
+        )
 
 
 class RcloneRepository(RepositoryBase):
