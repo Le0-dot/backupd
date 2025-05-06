@@ -25,11 +25,12 @@ class BackupJob:
     def __init__(
         self, container_name: str, volume: str, repository: Repository
     ) -> None:
+        settings = Settings()
         self.config: ContainerCreate = ContainerCreate.shell(
-            image=Settings().runner_image,
+            image=settings.runner_image,
             cmd=f"{repository.preexec} && restic --verbose backup --group-by tags "
             + f"--tag backupd --tag container:{container_name} --tag volume:{volume} /data",
-            env=repository.env | {"RESTIC_HOST": Settings().hostname},
+            env=repository.env | {"RESTIC_HOST": settings.hostname},
             mounts=[
                 repository.mount,
                 Mount(Target="/data", Source=volume, Type="volume", ReadOnly=True),
