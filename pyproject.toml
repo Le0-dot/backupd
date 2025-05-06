@@ -7,6 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "aiodocker==0.24.0",
     "fastapi[standard]==0.115.12",
+    "logfmter==0.0.9",
     "prometheus-client==0.21.1",
     "pydantic==2.11.3",
     "pydantic-settings==2.9.1",

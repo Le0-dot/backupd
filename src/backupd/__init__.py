@@ -2,8 +2,10 @@ from contextlib import asynccontextmanager
 from functools import partial
 from http import HTTPStatus
 from itertools import chain
+import logging
 
 from fastapi import FastAPI, Response
+from logfmter import Logfmter
 
 from backupd.backup import BackupJob
 from backupd.docker import (
@@ -17,6 +19,7 @@ from backupd.metrics import (
     metrics_lifespan,
 )
 from backupd.repository import Repository
+from backupd.settings import Settings
 from backupd.task_queue import AppQueue, queue_lifespan
 
 
@@ -26,8 +29,12 @@ async def app_lifespan(app: FastAPI):
         yield
 
 
+_ = Settings()  # validate settings
 app = FastAPI(lifespan=app_lifespan)
 app.add_middleware(APIMetricsMiddleware)
+
+logger =logging.getLogger("uvicorn")
+logger.handlers[0].setFormatter(Logfmter())
 
 
 @app.get("/container/{name}")
