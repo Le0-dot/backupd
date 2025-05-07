@@ -1,17 +1,14 @@
+import logging
 from dataclasses import dataclass, field
 from functools import partial
-import logging
-from time import time
 from typing import Self
 
 from aiodocker import Docker
 from prometheus_client import Counter, Gauge, Histogram
 
 from backupd.docker import (
-    Container,
-    ContainerCreate,
+    ContainerInspect,
     ContainerRunResult,
-    Mount,
     run_container,
 )
 from backupd.metrics import (
@@ -20,8 +17,8 @@ from backupd.metrics import (
     backup_start,
     job_state,
 )
-from backupd.repository import Repository
-from backupd.settings import Settings
+from backupd.restic.commands.backup import BackupSummary, backup
+from backupd.restic.repository import Repository
 
 
 @dataclass
@@ -34,20 +31,6 @@ class BackupJob:
     )
 
     @property
-    def configuration(self) -> ContainerCreate:
-        settings = Settings()
-        return ContainerCreate.shell(
-            image=settings.runner_image,
-            cmd=f"{self.repository.preexec} && restic --verbose backup --group-by tags "
-            + f"--tag backupd --tag container:{self.container} --tag volume:{self.volume} /data",
-            env=self.repository.env | {"RESTIC_HOST": settings.hostname},
-            mounts=[
-                self.repository.mount,
-                Mount(Target="/data", Source=self.volume, Type="volume", ReadOnly=True),
-            ],
-        )
-
-    @property
     def start_time_metric(self) -> Gauge:
         return backup_start.labels(container=self.container, volume=self.volume)
 
@@ -58,10 +41,8 @@ class BackupJob:
         )
 
     @property
-    def duration_metric(self) -> partial[Histogram]:
-        return partial(
-            backup_duration.labels, container=self.container, volume=self.volume
-        )
+    def duration_metric(self) -> Histogram:
+        return backup_duration.labels(container=self.container, volume=self.volume)
 
     @property
     def job_metric(self) -> partial[Gauge]:
@@ -71,7 +52,13 @@ class BackupJob:
         self.logger.log(
             level,
             msg,
-            extra={"container": self.container, "volume": self.volume} | (extra or {}),
+            extra={
+                "source": "job",
+                "type": "backup",
+                "container": self.container,
+                "volume": self.volume,
+            }
+            | (extra or {}),
         )
 
     def mark_created(self) -> None:
@@ -94,17 +81,18 @@ class BackupJob:
     def record_result(
         self,
         result: ContainerRunResult,
-        start_time: float,
-        finish_time: float,
     ) -> None:
-        status = ["failure", "success"][result.success]
-        run_time = max(finish_time - start_time, 0)
-        self.start_time_metric.set(start_time)
-        self.result_metric(status=status).inc()
-        self.duration_metric(status=status).observe(run_time)
+        if result.success:
+            summary = BackupSummary.model_validate_json(result.stdout.splitlines()[-1])
+            self.result_metric(status="success").inc()
+            self.start_time_metric.set(summary.backup_start.timestamp())
+            self.duration_metric.observe(summary.total_duration)
+        else:
+            self.result_metric(status="failure").inc()
 
         level = [logging.ERROR, logging.INFO][result.success]
-        self.log(level, f"Result of backup job is {status} in {run_time:.2f} seconds")
+        status = ["failure", "success"][result.success]
+        self.log(level, f"Result of backup job is {status}")
         self.log(level, result.stdout, extra={"stream": "stdout"})
         self.log(level, result.stderr, extra={"stream": "stderr"})
 
@@ -114,15 +102,17 @@ class BackupJob:
     async def __call__(self) -> None:
         self.mark_started()
 
+        configuration = backup(self.repository, self.volume)
+
         async with Docker() as client:
-            start_time = time()
-            result = await run_container(client, self.configuration, "backup")
-            finish_time = time()
+            result = await run_container(client, configuration, "backup")
 
         self.mark_finished()
-        self.record_result(result, start_time, finish_time)
+        self.record_result(result)
 
     @classmethod
-    def for_container(cls, container: Container, repository: Repository) -> list[Self]:
-        make = partial(cls, container=container.name, repository=repository)
-        return [make(volume=volume) for volume in container.volumes]
+    def for_container(
+        cls, container: ContainerInspect, repository: Repository
+    ) -> list[Self]:
+        make = partial(cls, container=container.Name, repository=repository)
+        return [make(volume=volume.Name) for volume in container.volumes]
