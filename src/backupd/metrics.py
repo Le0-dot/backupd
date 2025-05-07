@@ -1,11 +1,9 @@
 from collections.abc import Awaitable
-from contextlib import asynccontextmanager
 from typing import Callable, override
 
-from fastapi import FastAPI, Request, Response
-from prometheus_client import Counter, Gauge, Histogram, Summary, make_asgi_app
+from fastapi import Request, Response
+from prometheus_client import Counter, Gauge, Histogram
 from starlette.middleware.base import BaseHTTPMiddleware
-
 
 api_calls = Counter(
     name="api_calls",
@@ -29,7 +27,7 @@ backup_result = Counter(
 backup_duration = Histogram(
     name="backup",
     documentation="Time it took to run the backup",
-    labelnames=("container", "volume", "status"),
+    labelnames=("container", "volume"),
     unit="seconds",
     namespace="backupd",
 )
@@ -39,12 +37,6 @@ job_state = Gauge(
     labelnames=("kind", "state"),
     namespace="backupd",
 )
-
-
-@asynccontextmanager
-async def metrics_lifespan(app: FastAPI):
-    app.mount("/metrics", make_asgi_app())
-    yield
 
 
 class APIMetricsMiddleware(BaseHTTPMiddleware):
