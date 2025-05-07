@@ -26,8 +26,9 @@ Backupd is configured only with environment variables.
 > Backupd schedules start of docker container on HTTP request, which could lead to security risks if exposed to the internet. Due to this, it is recommened to limit access to the backupd service.
 
 Backupd exposes a number of HTTP endpoints:
-- GET `/containers` to list all container available to the backupd
-- GET `/container/{name}` to see name and volumes of the specific container
+- GET `/list/container` to list all container available to the backupd
+- GET `/list/container/{name}` to see name and volumes of the specific container
+- POST `/list/snapshots` to snapshots made by backupd in specific repository
 - POST `/backup` to schedule backup of volumes for all **running** docker containers
 - POST `/backup/{name}` to schedule backup of volumes for the specific **running** docker container
 - GET `/metrics` to collect [prometheus](https://prometheus.io) metrics for monitoring and alerting
