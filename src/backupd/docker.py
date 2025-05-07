@@ -1,10 +1,9 @@
 from collections.abc import Iterable
-from itertools import repeat
-from typing import Annotated, Any, Literal, NamedTuple, Self
+from typing import Annotated, Literal, NamedTuple, Self
 
 from aiodocker import Docker, DockerError
 from fastapi import Depends
-from pydantic import AfterValidator, BaseModel
+from pydantic import BaseModel
 
 
 async def make_client():
@@ -61,36 +60,40 @@ class ContainerWait(BaseModel):
     StatusCode: int
 
 
-class Container(BaseModel):
-    name: Annotated[str, AfterValidator(lambda s: s.removeprefix("/"))]
-    volumes: list[str]
+class MountPoint(BaseModel):
+    Type: Literal["bind", "volume", "image", "tmpfs", "npipe", "cluster"]
+    Name: str
+    Destination: str
 
-    def iter_volumes(self) -> Iterable[tuple[str, str]]:
-        return zip(repeat(self.name), self.volumes)
+
+class ContainerInspect(BaseModel):
+    """
+    https://docs.docker.com/reference/api/engine/version/v1.49/#tag/Container/operation/ContainerInspect
+    """
+
+    Id: str
+    Name: str
+    Mounts: list[MountPoint]
+
+    @property
+    def volumes(self) -> Iterable[MountPoint]:
+        return filter(lambda m: m.Type == "volume", self.Mounts)
 
     @classmethod
-    def from_attrs(cls, attrs: dict[str, Any]) -> Self:
-        name = attrs["Name"]
-        mounts = attrs["Mounts"]
-        volumes = [mount["Name"] for mount in mounts if mount["Type"] == "volume"]
+    async def all(cls, client: Docker) -> list[Self]:
+        containers = await client.containers.list()
+        raw = [await container.show() for container in containers]
+        return [cls.model_validate(item) for item in raw]
 
-        return cls(name=name, volumes=volumes)
+    @classmethod
+    async def by_name(cls, client: Docker, name: str) -> Self | None:
+        try:
+            container = await client.containers.get(name)
+        except DockerError:
+            return None
 
-
-async def container_by_name(client: Docker, name: str) -> Container | None:
-    try:
-        container = await client.containers.get(name)
-    except DockerError:
-        return None
-
-    attrs = await container.show()
-    return Container.from_attrs(attrs)
-
-
-async def list_containers(client: Docker) -> list[Container]:
-    containers = await client.containers.list()
-    attrs_list = [await container.show() for container in containers]
-    return [Container.from_attrs(attrs) for attrs in attrs_list]
+        raw = await container.show()
+        return cls.model_validate(raw)
 
 
 class ContainerRunResult(NamedTuple):
