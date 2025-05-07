@@ -3,53 +3,116 @@ from functools import partial
 from http import HTTPStatus
 from itertools import chain
 import logging
+from typing import Annotated, Self
 
-from fastapi import FastAPI, Response
+from fastapi import Depends, FastAPI, Request, Response
 from logfmter import Logfmter
+from prometheus_client import make_asgi_app
+from pydantic import BaseModel, PlainSerializer, ValidationError
 
-from backupd.backup import BackupJob
 from backupd.docker import (
     Client,
-    Container,
-    container_by_name,
-    list_containers,
+    ContainerInspect,
+    run_container,
 )
-from backupd.metrics import (
-    APIMetricsMiddleware,
-    metrics_lifespan,
-)
-from backupd.repository import Repository
+from backupd.metrics import APIMetricsMiddleware
+from backupd.restic.commands.snapshots import Snapshot, Snapshots, snapshots
+from backupd.restic.repository import Repository
 from backupd.settings import Settings
-from backupd.task_queue import AppQueue, queue_lifespan
+from backupd.schedule.queue import TaskQueue
+from backupd.schedule.backup import BackupJob
 
 
 @asynccontextmanager
-async def app_lifespan(app: FastAPI):
-    async with metrics_lifespan(app), queue_lifespan(app):
-        yield
+async def lifespan(app: FastAPI):
+    _ = Settings()  # validate settings
+
+    app.mount("/metrics", make_asgi_app())
+
+    app.state.queue = TaskQueue()
+    app.state.queue.start()
+
+    yield
+
+    await app.state.queue.shutdown()
 
 
-_ = Settings()  # validate settings
-app = FastAPI(lifespan=app_lifespan)
+def get_task_queue(request: Request) -> TaskQueue:
+    return request.app.state.queue
+
+
+AppQueue = Annotated[TaskQueue, Depends(get_task_queue)]
+
+app = FastAPI(lifespan=lifespan)
 app.add_middleware(APIMetricsMiddleware)
 
-logger =logging.getLogger("uvicorn")
-logger.handlers[0].setFormatter(Logfmter())
+# logger = logging.getLogger("uvicorn")
+# logger.handlers[0].setFormatter(Logfmter())
 
 
-@app.get("/container/{name}")
+class ContainerModel(BaseModel):
+    name: Annotated[str, PlainSerializer(lambda s: s.removeprefix("/"))]
+    volumes: list[str]
+
+    @classmethod
+    def from_inspect(cls, inspect: ContainerInspect) -> Self:
+        volumes = [mount.Name for mount in inspect.volumes]
+        return cls(name=inspect.Name, volumes=volumes)
+
+
+@app.get("/list/container")
+async def get_containers(client: Client) -> list[ContainerModel]:
+    containers = await ContainerInspect.all(client)
+    return list(map(ContainerModel.from_inspect, containers))
+
+
+@app.get("/list/container/{name}")
 async def get_container(
     name: str, response: Response, client: Client
-) -> Container | None:
-    container = await container_by_name(client, name)
+) -> ContainerModel | None:
+    container = await ContainerInspect.by_name(client, name)
+
     if container is None:
         response.status_code = HTTPStatus.NOT_FOUND
-    return container
+        return None
+
+    return ContainerModel.from_inspect(container)
 
 
-@app.get("/containers")
-async def get_containers(client: Client) -> list[Container]:
-    return await list_containers(client)
+@app.post("/list/snapshot")
+async def post_snapshots(
+    repository: Repository,
+    response: Response,
+    client: Client,
+    id: str = "",
+    tags: str = "backupd",
+) -> list[Snapshot] | None:
+    configuration = snapshots(repository, id, tags)
+
+    result = await run_container(client, configuration, "backupd-retrieve")
+    if not result.success:
+        response.status_code = HTTPStatus.BAD_REQUEST
+        return None
+
+    try:
+        return Snapshots.validate_json(result.stdout)
+    except ValidationError:
+        response.status_code = HTTPStatus.FAILED_DEPENDENCY
+        return None
+
+
+@app.post("/backup")
+async def post_backup(
+    repository: Repository,
+    client: Client,
+    queue: AppQueue,
+) -> list[ContainerModel]:
+    containers = await ContainerInspect.all(client)
+
+    jobs = map(partial(BackupJob.for_container, repository=repository), containers)
+    await queue.put(*chain.from_iterable(jobs))
+
+    return list(map(ContainerModel.from_inspect, containers))
 
 
 @app.post("/backup/{name}")
@@ -59,8 +122,8 @@ async def post_backup_container(
     response: Response,
     client: Client,
     queue: AppQueue,
-) -> Container | None:
-    container = await container_by_name(client, name)
+) -> ContainerModel | None:
+    container = await ContainerInspect.by_name(client, name)
     if container is None:
         response.status_code = HTTPStatus.NOT_FOUND
         return
@@ -68,18 +131,4 @@ async def post_backup_container(
     jobs = BackupJob.for_container(container, repository)
     await queue.put(*jobs)
 
-    return container
-
-
-@app.post("/backup")
-async def post_backup(
-    repository: Repository,
-    client: Client,
-    queue: AppQueue,
-) -> list[Container]:
-    containers = await list_containers(client)
-
-    jobs = map(partial(BackupJob.for_container, repository=repository), containers)
-    await queue.put(*chain.from_iterable(jobs))
-
-    return containers
+    return ContainerModel.from_inspect(container)
