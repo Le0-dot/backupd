@@ -4,8 +4,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from backupd.docker import ContainerCreate, Mount
-from backupd.restic.repository import Repository
-from backupd.settings import Settings
+from backupd.settings import ResticSettings, Settings
 
 
 class BackupSummary(BaseModel):
@@ -20,13 +19,14 @@ class BackupSummary(BaseModel):
     snapshot_id: str | None = None
 
 
-def backup(repository: Repository, volume: str) -> ContainerCreate:
+def backup(volume: str) -> ContainerCreate:
     settings = Settings()
+    repository = ResticSettings()
     return ContainerCreate.shell(
         image=settings.runner_image,
-        cmd=f"{repository.preexec} && restic --verbose --json backup --group-by tags "
+        cmd="restic --verbose --json backup --group-by tags "
         + f"--tag backupd --tag volume:{volume} /data",
-        env=repository.env | {"RESTIC_HOST": settings.hostname},
+        env=repository.env + [f"RESTIC_HOST={settings.hostname}"],
         mounts=[
             repository.mount,
             Mount(Target="/data", Source=volume, Type="volume", ReadOnly=True),

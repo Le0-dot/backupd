@@ -17,15 +17,13 @@ from backupd.metrics import (
     backup_start,
     job_state,
 )
-from backupd.restic.commands.backup import BackupSummary, backup
-from backupd.restic.repository import Repository
+from backupd.restic.backup import BackupSummary, backup
 
 
 @dataclass
 class BackupJob:
     container: str
     volume: str
-    repository: Repository
     logger: logging.Logger = field(
         default_factory=lambda: logging.getLogger("uvicorn.error")
     )
@@ -102,7 +100,7 @@ class BackupJob:
     async def __call__(self) -> None:
         self.mark_started()
 
-        configuration = backup(self.repository, self.volume)
+        configuration = backup(self.volume)
 
         async with Docker() as client:
             result = await run_container(client, configuration, "backup")
@@ -111,8 +109,6 @@ class BackupJob:
         self.record_result(result)
 
     @classmethod
-    def for_container(
-        cls, container: ContainerInspect, repository: Repository
-    ) -> list[Self]:
-        make = partial(cls, container=container.Name, repository=repository)
+    def for_container(cls, container: ContainerInspect) -> list[Self]:
+        make = partial(cls, container=container.Name)
         return [make(volume=volume.Name) for volume in container.volumes]

@@ -1,14 +1,10 @@
-from collections.abc import Callable
-from itertools import chain
-from typing import Annotated, ClassVar, Self
+from collections.abc import Iterable, Iterator, Mapping
+from dataclasses import dataclass
+from functools import cached_property
+from itertools import starmap
+from typing import ClassVar, Self, cast, override
 
-from pydantic import (
-    BaseModel,
-    PlainSerializer,
-    RootModel,
-    model_serializer,
-    model_validator,
-)
+from pydantic import BaseModel, RootModel, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,17 +20,41 @@ class Settings(BaseSettings):
         super().__init__()
 
 
+type NestedMapping[T, U] = Mapping[T, U | "NestedMapping"]
+type TreePath[T] = tuple[T, ...]
+
+
+@dataclass
+class DictTree[T, U](Iterable[tuple[TreePath[T], U]]):
+    obj: NestedMapping[T, U]
+
+    @override
+    def __iter__(self) -> Iterator[tuple[TreePath[T], U]]:
+        for key, value in self.obj.items():
+            if not isinstance(value, Mapping):
+                yield (key,), value
+                continue
+
+            nested = cast(NestedMapping[T, U], value)
+            for path, leaf in DictTree(nested):
+                yield (key, *path), leaf
+
+
 class Restic(BaseModel):
     repository: str
     password: str
 
     @property
     def backend(self) -> str:
-        return self.repository.split(":")[0]
+        if len(split := self.repository.split(":")) == 1:
+            return "local"
+        return split[0]
 
     @property
     def location(self) -> list[str]:
-        return self.repository.split(":")[1:]
+        if len(split := self.repository.split(":")) == 1:
+            return split
+        return split[1:]
 
     @model_validator(mode="after")
     def validate_backend(self) -> Self:
@@ -50,18 +70,9 @@ class Rclone(RootModel[dict[str, str]]):
         return definition in self.root
 
 
-def env_serializer(prefix: str) -> Callable[[BaseModel], list[str]]:
-    def serializer(model: BaseModel) -> list[str]:
-        return [f"{prefix}{k.upper()}={v}" for k, v in model.model_dump().items()]
-
-    return serializer
-
-
 class ResticSettings(BaseSettings):
-    restic: Annotated[Restic, PlainSerializer(env_serializer("RESTIC_"), list[str])]
-    rclone: (
-        Annotated[Rclone, PlainSerializer(env_serializer("RCLONE_"), list[str])] | None
-    ) = None
+    restic: Restic
+    rclone: Rclone | None = None
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_nested_delimiter="_",
@@ -88,12 +99,12 @@ class ResticSettings(BaseSettings):
 
         return self
 
-    @model_serializer(mode="wrap")
-    def serialize(
-        self, serializer: Callable[[Self], dict[str, list[str]]]
-    ) -> list[str]:
-        data = serializer(self)
-        return list(chain.from_iterable(data.values()))
+    @cached_property
+    def env(self) -> list[str]:
+        def to_env(path: TreePath[str], value: str) -> str:
+            key = "_".join(path).upper()
+            return f"{key}={value}"
 
-
-print(ResticSettings().model_dump())
+        tree = DictTree(self.model_dump())
+        variables = starmap(to_env, tree)
+        return list(variables)
