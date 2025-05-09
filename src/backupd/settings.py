@@ -1,6 +1,6 @@
 from collections.abc import Callable
 from itertools import chain
-from typing import Annotated, ClassVar, Self
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal, Self, override
 
 from pydantic import (
     BaseModel,
@@ -88,12 +88,27 @@ class ResticSettings(BaseSettings):
 
         return self
 
-    @model_serializer(mode="wrap")
+    @model_serializer(mode="wrap", return_type=list[str])
     def serialize(
         self, serializer: Callable[[Self], dict[str, list[str]]]
     ) -> list[str]:
         data = serializer(self)
         return list(chain.from_iterable(data.values()))
+
+    if TYPE_CHECKING:
+        def model_dump(
+            self,
+            *,
+            mode: Literal["json", "python"] | str = "python",
+            include: Any = None,
+            exclude: Any = None,
+            by_alias: bool | None = False,
+            exclude_unset: bool = False,
+            exclude_defaults: bool = False,
+            exclude_none: bool = False,
+            round_trip: bool = False,
+            warnings: bool = True,
+        ) -> list[str]: ...
 
 
 print(ResticSettings().model_dump())

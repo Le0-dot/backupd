@@ -41,13 +41,13 @@ class ContainerCreate(BaseModel):
 
     @classmethod
     def shell(
-        cls, *, image: str, cmd: str, env: dict[str, str], mounts: list[Mount | None]
+        cls, *, image: str, cmd: str, env: list[str], mounts: list[Mount | None]
     ) -> Self:
         return cls(
             Image=image,
             Entrypoint="sh",
             Cmd=["-c", cmd],
-            Env=[f"{key}={value}" for key, value in env.items()],
+            Env=env,
             HostConfig=HostConfig(Mounts=list(filter(None, mounts))),
         )
 
