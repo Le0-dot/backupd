@@ -26,19 +26,20 @@ class Snapshot(BaseModel):
 Snapshots = TypeAdapter(list[Snapshot])
 
 
-def snapshots(id: str, tags: str) -> ContainerCreate:
+def snapshots(tags: str) -> ContainerCreate:
     settings = Settings()
     repository = RepositorySettings()
 
-    tag_str = f"--tag {tags}" if tags else ""
+    tag_filter = f"--tag {tags}" if tags else ""
+
     mount: Mount | None = None
     if repository.restic.backend == "local":
         [path] = repository.restic.location
-        mount = Mount(Target=path, Source=path, Type="bind", ReadOnly=True)
+        mount = Mount(Target=path, Source=path, Type="bind", ReadOnly=False)
 
     return ContainerCreate.shell(
         image=settings.runner_image,
-        cmd=f"restic --json snapshots {tag_str} {id}",
+        cmd=f"restic --json snapshots {tag_filter}",
         env=repository.env,
         mounts=[mount],
     )

@@ -79,13 +79,12 @@ async def get_container(
 
 
 @app.get("/list/snapshot")
-async def post_snapshots(
+async def list_snapshots(
     response: Response,
     client: Client,
-    id: str = "",
     tags: str = "backupd",
 ) -> list[Snapshot] | None:
-    configuration = snapshots(id, tags)
+    configuration = snapshots(tags)
 
     result = await run_container(client, configuration, "backupd-retrieve")
     if not result.success:
