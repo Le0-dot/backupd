@@ -16,7 +16,7 @@ class Settings(BaseSettings):
         env_prefix="BACKUPD_", enable_decoding=False
     )
 
-    def __init__(self) -> None:  # To prevent warnings for Settings()
+    def __init__(self) -> None:
         super().__init__()
 
 
@@ -70,7 +70,7 @@ class Rclone(RootModel[dict[str, str]]):
         return definition in self.root
 
 
-class ResticSettings(BaseSettings):
+class RepositorySettings(BaseSettings):
     restic: Restic
     rclone: Rclone | None = None
 

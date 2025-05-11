@@ -3,8 +3,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, TypeAdapter
 
-from backupd.docker import ContainerCreate
-from backupd.settings import ResticSettings, Settings
+from backupd.docker import ContainerCreate, Mount
+from backupd.settings import RepositorySettings, Settings
 
 
 class Snapshot(BaseModel):
@@ -27,13 +27,18 @@ Snapshots = TypeAdapter(list[Snapshot])
 
 
 def snapshots(id: str, tags: str) -> ContainerCreate:
-    tag_str = f"--tag {tags}" if tags else ""
-
     settings = Settings()
-    repository = ResticSettings()
+    repository = RepositorySettings()
+
+    tag_str = f"--tag {tags}" if tags else ""
+    mount: Mount | None = None
+    if repository.restic.backend == "local":
+        [path] = repository.restic.location
+        mount = Mount(Target=path, Source=path, Type="bind", ReadOnly=True)
+
     return ContainerCreate.shell(
         image=settings.runner_image,
         cmd=f"restic --json snapshots {tag_str} {id}",
         env=repository.env,
-        mounts=[repository.mount],
+        mounts=[mount],
     )

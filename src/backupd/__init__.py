@@ -1,7 +1,7 @@
+import logging
 from contextlib import asynccontextmanager
 from http import HTTPStatus
 from itertools import chain
-import logging
 from typing import Annotated, Self
 
 from fastapi import Depends, FastAPI, Request, Response
@@ -16,15 +16,15 @@ from backupd.docker import (
 )
 from backupd.metrics import APIMetricsMiddleware
 from backupd.restic.snapshots import Snapshot, Snapshots, snapshots
-from backupd.settings import ResticSettings, Settings
-from backupd.schedule.queue import TaskQueue
 from backupd.schedule.backup import BackupJob
+from backupd.schedule.queue import TaskQueue
+from backupd.settings import RepositorySettings, Settings
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _ = Settings()  # validate settings
-    _ = ResticSettings()  # validate restic
+    _ = RepositorySettings()  # validate restic
 
     app.mount("/metrics", make_asgi_app())
 
