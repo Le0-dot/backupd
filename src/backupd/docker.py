@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import Iterable
+import json
 from typing import Annotated, Literal, NamedTuple, Self
 
 from aiodocker import Docker, DockerError
@@ -68,6 +69,7 @@ class MountPoint(BaseModel):
     Name: str
     Destination: str
 
+
 class ContainerInspect(BaseModel):
     """
     https://docs.docker.com/reference/api/engine/version/v1.49/#tag/Container/operation/ContainerInspect
@@ -95,6 +97,36 @@ class ContainerInspect(BaseModel):
             return None
 
         raw = await container.show()
+        return cls.model_validate(raw)
+
+
+class VolumeInspect(BaseModel):
+    """
+    https://docs.docker.com/reference/api/engine/version/v1.43/#tag/Volume/operation/VolumeInspect
+    """
+
+    Name: str
+    Driver: str
+    Mountpoint: str
+    Labels: dict[str, str] | None = None
+
+    @property
+    def anonymous(self) -> bool:
+        return "com.docker.volume.anonymous" in (self.Labels or {})
+
+    @classmethod
+    async def all(cls, client: Docker) -> list[Self]:
+        volumes = await client.volumes.list()
+        return [cls.model_validate(volume) for volume in volumes["Volumes"]]
+
+    @classmethod
+    async def by_name(cls, client: Docker, name: str) -> Self | None:
+        try:
+            volume = await client.volumes.get(name)
+        except DockerError:
+            return None
+
+        raw = await volume.show()
         return cls.model_validate(raw)
 
 
