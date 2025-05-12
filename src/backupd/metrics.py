@@ -2,7 +2,7 @@ from collections.abc import Awaitable
 from typing import Callable, override
 
 from fastapi import Request, Response
-from prometheus_client import Counter, Gauge, Histogram
+from prometheus_client import Counter, Gauge
 from starlette.middleware.base import BaseHTTPMiddleware
 
 api_calls = Counter(
@@ -11,30 +11,16 @@ api_calls = Counter(
     labelnames=("path", "method", "status"),
     namespace="backupd",
 )
-backup_start = Gauge(
-    name="backup_last_start_timestamp",
-    documentation="Timestamp of the last started backup",
-    labelnames=("container", "volume"),
-    unit="seconds",
-    namespace="backupd",
-)
-backup_result = Counter(
-    name="backup_result",
-    documentation="Total number of completed backups",
-    labelnames=("container", "volume", "status"),
-    namespace="backupd",
-)
-backup_duration = Histogram(
-    name="backup",
-    documentation="Time it took to run the backup",
-    labelnames=("container", "volume"),
-    unit="seconds",
-    namespace="backupd",
-)
 job_state = Gauge(
     name="job_state",
-    documentation="Number of job in the queue scheduled to run",
+    documentation="Number of jobs in a paticular state",
     labelnames=("kind", "state"),
+    namespace="backupd",
+)
+job_result = Gauge(
+    name="job_result",
+    documentation="Number of jobs that finished in a paticular outcome",
+    labelnames=("kind", "status", "volume"),
     namespace="backupd",
 )
 
