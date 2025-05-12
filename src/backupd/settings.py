@@ -10,7 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     runner_image: str
-    hostname: str = "backupd"
+    timeout_seconds: int = 60
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_prefix="BACKUPD_", enable_decoding=False
@@ -43,6 +43,7 @@ class DictTree[T, U](Iterable[tuple[TreePath[T], U]]):
 class Restic(BaseModel):
     repository: str
     password: str
+    host: str = "backupd"
 
     @property
     def backend(self) -> str:

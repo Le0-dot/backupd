@@ -26,7 +26,7 @@ def backup(volume: str) -> ContainerCreate:
     repo_mount: Mount | None = None
     if repository.restic.backend == "local":
         [path] = repository.restic.location
-        repo_mount = Mount(Target=path, Source=path, Type="bind", ReadOnly=True)
+        repo_mount = Mount(Target=path, Source=path, Type="bind", ReadOnly=False)
 
     data_mount = Mount(Target="/data", Source=volume, Type="volume", ReadOnly=True)
 
@@ -34,6 +34,6 @@ def backup(volume: str) -> ContainerCreate:
         image=settings.runner_image,
         cmd="restic --verbose --json backup --group-by tags "
         + f"--tag backupd --tag volume:{volume} /data",
-        env=repository.env + [f"RESTIC_HOST={settings.hostname}"],
+        env=repository.env,
         mounts=[repo_mount, data_mount],
     )
