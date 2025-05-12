@@ -15,8 +15,9 @@ from backupd.docker import (
     run_container,
 )
 from backupd.metrics import APIMetricsMiddleware
+from backupd.restic.restore import restore_latest
 from backupd.restic.snapshots import Snapshot, Snapshots, snapshots
-from backupd.schedule.backup import BackupJob
+from backupd.schedule.jobs import BackupJob
 from backupd.schedule.queue import TaskQueue
 from backupd.settings import RepositorySettings, Settings
 
@@ -99,7 +100,7 @@ async def list_snapshots(
 
 
 @app.post("/backup")
-async def post_backup(
+async def backup_all_containers(
     client: Client,
     queue: AppQueue,
 ) -> list[ContainerModel]:
@@ -112,7 +113,7 @@ async def post_backup(
 
 
 @app.post("/backup/{name}")
-async def post_backup_container(
+async def backup_container(
     name: str,
     response: Response,
     client: Client,
@@ -127,3 +128,20 @@ async def post_backup_container(
     await queue.put(*jobs)
 
     return ContainerModel.from_inspect(container)
+
+
+@app.post("/restore/container/{name}")
+async def restore_container_latest(
+    name: str, response: Response, client: Client
+) -> None:
+    inspect = await ContainerInspect.by_name(client, name)
+
+    if inspect is None:
+        response.status_code = HTTPStatus.NOT_FOUND
+        return
+
+    for volume in inspect.Mounts:
+        result = await run_container(
+            client, restore_latest(volume.Name), "backupd-restore"
+        )
+        print(result)
