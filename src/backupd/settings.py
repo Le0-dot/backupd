@@ -10,7 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     runner_image: str
-    timeout_seconds: int = 60
+    timeout_seconds: int = 60 * 5
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_prefix="BACKUPD_", enable_decoding=False
@@ -26,11 +26,11 @@ type TreePath[T] = tuple[T, ...]
 
 @dataclass
 class DictTree[T, U](Iterable[tuple[TreePath[T], U]]):
-    obj: NestedMapping[T, U]
+    mapping: NestedMapping[T, U]
 
     @override
     def __iter__(self) -> Iterator[tuple[TreePath[T], U]]:
-        for key, value in self.obj.items():
+        for key, value in self.mapping.items():
             if not isinstance(value, Mapping):
                 yield (key,), value
                 continue
