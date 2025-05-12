@@ -1,9 +1,12 @@
+import asyncio
 from collections.abc import Iterable
 from typing import Annotated, Literal, NamedTuple, Self
 
 from aiodocker import Docker, DockerError
 from fastapi import Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
+
+from backupd.settings import Settings
 
 
 async def make_client():
@@ -20,7 +23,7 @@ Client = Annotated[Docker, Depends(make_client)]
 class Mount(BaseModel):
     Target: str
     Source: str
-    Type: Literal["bind", "volume", "tmpfs"]
+    Type: Literal["bind", "volume", "tmpfs", "npipe", "cluster"]
     ReadOnly: bool
 
 
@@ -65,7 +68,6 @@ class MountPoint(BaseModel):
     Name: str
     Destination: str
 
-
 class ContainerInspect(BaseModel):
     """
     https://docs.docker.com/reference/api/engine/version/v1.49/#tag/Container/operation/ContainerInspect
@@ -109,12 +111,20 @@ async def run_container(
 ) -> ContainerRunResult:
     container = await client.containers.run(config.model_dump(), name=name)
 
-    result = ContainerWait.model_validate(await container.wait())
-    exit_code = result.StatusCode
+    settings = Settings()
+    try:
+        result_json = await asyncio.wait_for(
+            container.wait(), timeout=settings.timeout_seconds
+        )
+        result = ContainerWait.model_validate(result_json)
+        success = result.StatusCode == 0
+    except asyncio.TimeoutError:
+        success = False
+        await container.stop()
 
     stdout = await container.log(stdout=True)
     stderr = await container.log(stderr=True)
 
     await container.delete()
 
-    return ContainerRunResult(exit_code == 0, "".join(stdout), "".join(stderr))
+    return ContainerRunResult(success, "".join(stdout), "".join(stderr))
