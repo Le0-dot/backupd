@@ -14,10 +14,12 @@ class Snapshot(BaseModel):
 
     time: datetime
     parent: str | None = None
+    tree: str
     paths: list[Path]
     hostname: str
     username: str
-    tags: list[str]
+    excludes: list[str] | None = None
+    tags: list[str] | None = None
     program_version: str
     id: str
     short_id: str
