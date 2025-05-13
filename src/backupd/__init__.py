@@ -1,26 +1,15 @@
 import logging
 from contextlib import asynccontextmanager
-from http import HTTPStatus
-from itertools import chain
-from typing import Annotated, Self
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI
 from logfmter import Logfmter
 from prometheus_client import make_asgi_app
-from pydantic import BaseModel, PlainSerializer, ValidationError
 
-from backupd.docker import (
-    Client,
-    ContainerInspect,
-    run_container,
-)
-from backupd.metrics import APIMetricsMiddleware
-from backupd.restic.restore import restore_latest
-from backupd.restic.snapshots import Snapshot, Snapshots, snapshots
-from backupd.settings import RepositorySettings, Settings
 from backupd.api.list import router as list_router
 from backupd.api.backup import router as backup_router
 from backupd.api.restore import router as restore_router
+from backupd.metrics import APIMetricsMiddleware
+from backupd.settings import RepositorySettings, Settings
 
 
 @asynccontextmanager
