@@ -80,6 +80,10 @@ class ContainerInspect(BaseModel):
     Mounts: list[MountPoint]
 
     @property
+    def name(self) -> str:
+        return self.Name.removeprefix("/")
+
+    @property
     def volumes(self) -> Iterable[MountPoint]:
         return filter(lambda m: m.Type == "volume", self.Mounts)
 

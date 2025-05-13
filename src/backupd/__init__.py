@@ -30,60 +30,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(list_router)
-# app.include_router(backup_router)
+app.include_router(backup_router)
 # app.include_router(restore_router)
 app.add_middleware(APIMetricsMiddleware)
 
 
-# class ContainerModel(BaseModel):
-#     name: Annotated[str, PlainSerializer(lambda s: s.removeprefix("/"))]
-#     volumes: list[str]
-#
-#     @classmethod
-#     def from_inspect(cls, inspect: ContainerInspect) -> Self:
-#         volumes = [mount.Name for mount in inspect.volumes]
-#         return cls(name=inspect.Name, volumes=volumes)
-#
-#
-# @app.get("/list/container")
-# async def get_containers(client: Client) -> list[ContainerModel]:
-#     containers = await ContainerInspect.all(client)
-#     return list(map(ContainerModel.from_inspect, containers))
-#
-#
-# @app.get("/list/container/{name}")
-# async def get_container(
-#     name: str, response: Response, client: Client
-# ) -> ContainerModel | None:
-#     container = await ContainerInspect.by_name(client, name)
-#
-#     if container is None:
-#         response.status_code = HTTPStatus.NOT_FOUND
-#         return None
-#
-#     return ContainerModel.from_inspect(container)
-#
-#
-# @app.get("/list/snapshot")
-# async def list_snapshots(
-#     response: Response,
-#     client: Client,
-#     tags: str = "backupd",
-# ) -> list[Snapshot] | None:
-#     configuration = snapshots(tags)
-#
-#     result = await run_container(client, configuration, "backupd-retrieve")
-#     if not result.success:
-#         response.status_code = HTTPStatus.BAD_REQUEST
-#         return None
-#
-#     try:
-#         return Snapshots.validate_json(result.stdout)
-#     except ValidationError:
-#         response.status_code = HTTPStatus.FAILED_DEPENDENCY
-#         return None
-#
-#
 # @app.post("/backup")
 # async def backup_all_containers(
 #     client: Client,

@@ -20,7 +20,7 @@ backup_result = Counter(
 backup_duration = Histogram(
     name="backup_duration",
     documentation="Duraction of successful backup",
-    labelnames=("volume"),
+    labelnames=("volume",),
     namespace="backupd",
 )
 restore_result = Counter(

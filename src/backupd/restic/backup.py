@@ -1,9 +1,10 @@
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field
 
 from backupd.docker import ContainerCreate, Mount
+from backupd.restic.flags import Tag, Group
 from backupd.settings import RepositorySettings, Settings
 
 
@@ -13,15 +14,15 @@ class BackupStatus(BaseModel):
     """
 
     message_type: Literal["status"]
-    seconds_elapsed: int
-    seconds_remaining: int
+    seconds_elapsed: int | None = None
+    seconds_remaining: int | None = None
     percent_done: float
-    total_files: int
-    files_done: int
-    total_bytes: int
-    bytes_done: int
-    error_count: int
-    current_files: list[str]
+    total_files: int | None = None
+    files_done: int | None = None
+    total_bytes: int | None = None
+    bytes_done: int | None = None
+    error_count: int | None = None
+    current_files: list[str] | None = None
 
 
 class BackupVerboseStatus(BaseModel):
@@ -57,7 +58,7 @@ class BackupSummary(BaseModel):
     """
 
     message_type: Literal["summary"]
-    dry_run: bool
+    dry_run: bool | None = None
     files_new: int
     files_changed: int
     files_unmodified: int
@@ -93,10 +94,12 @@ def backup(volume: str) -> ContainerCreate:
 
     data_mount = Mount(Target="/data", Source=volume, Type="volume", ReadOnly=True)
 
+    tag_flag = (Tag.app() | Tag.volume(volume)).flag
+    group_flag = Group.tags().flag
+
     return ContainerCreate.shell(
         image=settings.runner_image,
-        cmd="restic --verbose --json backup --group-by tags "
-        + f"--tag backupd --tag volume:{volume} /data",
+        cmd=f"restic --verbose=2 --json backup {tag_flag} {group_flag} /data",
         env=repository.env,
         mounts=[repo_mount, data_mount],
     )

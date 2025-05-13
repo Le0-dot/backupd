@@ -11,9 +11,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     runner_image: str
     timeout_seconds: int = 60 * 5
+    abort_on_failure: bool = True
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
-        env_prefix="BACKUPD_", enable_decoding=False
+        env_prefix="BACKUPD_"
     )
 
     def __init__(self) -> None:

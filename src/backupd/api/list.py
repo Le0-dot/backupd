@@ -2,7 +2,7 @@ from http import HTTPStatus
 from typing import Self
 
 from fastapi import APIRouter, Response
-from pydantic import BaseModel, TypeAdapter, field_serializer
+from pydantic import BaseModel, TypeAdapter
 
 from backupd.docker import Client, ContainerInspect, VolumeInspect, run_container
 from backupd.restic.flags import Group, Tag
@@ -23,14 +23,10 @@ class ContainerModel(BaseModel):
     name: str
     volumes: list[str]
 
-    @field_serializer("name")
-    def serialize_name(self, name: str) -> str:
-        return name.removeprefix("/")
-
     @classmethod
     def from_inspect(cls, inspect: ContainerInspect) -> Self:
         volumes = map(lambda m: m.Name, inspect.volumes)
-        return cls(name=inspect.Name, volumes=list(volumes))
+        return cls(name=inspect.name, volumes=list(volumes))
 
 
 @router.get("/volume")
