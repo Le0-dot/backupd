@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 
 from backupd.docker import ContainerCreate, Mount
 from backupd.restic.error import Error, ExitError
+from backupd.restic.flags import TagFlag
 from backupd.settings import RepositorySettings, Settings
 
 
@@ -65,10 +66,11 @@ def restore(snapshot: str, volume: str) -> ContainerCreate:
         [path] = repository.restic.location
         repo_mount = Mount(Target=path, Source=path, Type="bind", ReadOnly=False)
 
-    data_mount = Mount(Target="/data", Source=volume, Type="volume", ReadOnly=True)
+    data_mount = Mount(Target="/data", Source=volume, Type="volume", ReadOnly=False)
+
     return ContainerCreate.shell(
         image=settings.runner_image,
-        cmd=f"restic --json restore {snapshot} --target /",
+        cmd=f"restic --verbose=2 --json restore {snapshot}:data --target /data",
         env=repository.env,
         mounts=[repo_mount, data_mount],
     )
@@ -84,9 +86,12 @@ def restore_latest(volume: str) -> ContainerCreate:
         repo_mount = Mount(Target=path, Source=path, Type="bind", ReadOnly=False)
 
     data_mount = Mount(Target="/data", Source=volume, Type="volume", ReadOnly=False)
+
+    tag = TagFlag.for_volume(volume)
+
     return ContainerCreate.shell(
         image=settings.runner_image,
-        cmd=f"restic --json restore latest --tag backupd --tag volume:{volume} --target /",
+        cmd=f"restic --verbose=2 --json restore latest:data {tag} --target /data",
         env=repository.env,
         mounts=[repo_mount, data_mount],
     )
