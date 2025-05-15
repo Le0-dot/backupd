@@ -43,8 +43,6 @@ Backupd exposes a number of HTTP endpoints:
 - GET `/metrics` to collect [prometheus](https://prometheus.io) metrics for monitoring and alerting
 - GET `/docs` to view [Swagger UI](https://swagger.io/tools/swagger-ui)
 
-All `/backup` endpoints additionally recieve POST body with information about restic repository (As of right now, only local and rclone repositories are supported). The exact format of required HTTP body could be seen at `/docs` endpoint.
-
 ## Features
 
 - [x] Backuping individual volume
@@ -73,36 +71,41 @@ services:
       - BACKUPD_RUNNER_IMAGE=docker.io/instrumentisto/restic:0.18.0 # Includes restic and rclone
       # - BACKUPD_HOSTNAME=...
       # - DOCKER_HOST=...
+
+      - RESTIC_REPOSITORY=...
+      - RESTIC_PASSWORD=...
+
+      # - RCLONE_CONFIG_..._TYPE=... # Set RCLONE_CONFIG_* to configure rclone repository
 ```
 
 ### Trigger backup with curl
 ```sh
-curl -X POST http://localhost:9988/backup --json '{"kind": "local", "location": "local:/location/of/restic/repository", "password": "password-to-restic-repository"}'
+curl -X POST http://localhost:9988/backup/container
 ```
 
 ### Systemd Service and Timer to trigger backups
 
-#### backup@.service
+#### backup-containers.service
 
-```ini file=backup@.service
+```ini
 [Unit]
 Description=Trigger backup of docker volumes to repository in %I
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/curl -X POST http://localhost:9988/backup --json '@%I'
+ExecStart=/usr/bin/curl -X POST http://localhost:9988/backup/container
 ```
 
-#### backup@.timer
+#### backup-containers.timer
 
-```ini file=backup@.timer
+```ini
 [Unit]
 Description=Trigger backup of docker volumes every day at 5 AM to repository in %I
 
 [Timer]
 OnCalendar=*-*-* 05:00:00
 Persistent=true
-Unit=backup@%i.service
+Unit=backup-containers.service
 
 [Install]
 WantedBy=default.target
@@ -111,15 +114,10 @@ WantedBy=default.target
 #### Starting the timer
 Put the repository configuration in repo.json wherever you want. Then run the following command to start and enable the service with escaped file path as parameter.
 ```sh
-systemctl enable --now $(systemd-escape /full/path/to/repo.json --template backup@.timer)
+systemctl enable --now backup-containers.timer
 ```
 
 To verify that timer works run
 ```sh
-systemctl status $(systemd-escape /full/path/to/repo.json --template backup@.timer)
-```
-
-To verify check the service run
-```sh
-systemctl status $(systemd-escape /full/path/to/repo.json --template backup@.service)
+systemctl status backup-containers.timer
 ```
