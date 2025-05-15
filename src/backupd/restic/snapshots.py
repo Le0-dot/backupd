@@ -46,6 +46,22 @@ def snapshots(tags: list[TagFlag], groupping: Group) -> ContainerCreate:
         [path] = repository.restic.location
         mount = Mount(Target=path, Source=path, Type="bind", ReadOnly=False)
 
+    return ContainerCreate.shell(
+        image=settings.runner_image,
+        cmd=f"restic --json snapshots {' '.join(map(str, tags))} {groupping}",
+        env=repository.env,
+        mounts=[mount],
+    )
+
+
+def snapshot_by_id(snapshot_id: str) -> ContainerCreate:
+    settings = Settings()
+    repository = RepositorySettings()
+
+    mount: Mount | None = None
+    if repository.restic.backend == "local":
+        [path] = repository.restic.location
+        mount = Mount(Target=path, Source=path, Type="bind", ReadOnly=False)
 
     return ContainerCreate.shell(
         image=settings.runner_image,
