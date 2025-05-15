@@ -22,7 +22,7 @@ async def run_backup(client: Client, volume: str) -> tuple[bool, VolumeBackup]:
 
     lines = result.stdout.splitlines() + result.stderr.splitlines()
     adapter: TypeAdapter[BackupMessage] = TypeAdapter(BackupMessage)
-    messages = [adapter.validate_json(line) for line in lines]
+    messages = list(map(adapter.validate_json, lines))
 
     status = ["failure", "success"][result.success]
     backup_result.labels(volume, status).inc()
@@ -38,15 +38,18 @@ async def run_backup(client: Client, volume: str) -> tuple[bool, VolumeBackup]:
 async def run_bulk_backup(
     client: Client, volumes: Iterable[str], abort_on_failure: bool
 ) -> tuple[bool, BulkBackup]:
+    success = True
     messages: BulkBackup = {}
     for volume in volumes:
-        success, backup_messages = await run_backup(client, volume)
+        backup_success, backup_messages = await run_backup(client, volume)
+
+        success &= backup_success
         messages[volume] = backup_messages
 
         if not success and abort_on_failure:
-            return False, messages
+            break
 
-    return True, messages
+    return success, messages
 
 
 @router.post("/backup/volume")
@@ -101,7 +104,7 @@ async def backup_all_conatiner(response: Response, client: Client) -> Conatiners
             response.status_code = HTTPStatus.FAILED_DEPENDENCY
 
         if not success and settings.abort_on_failure:
-            return messages
+            break
 
     return messages
 
