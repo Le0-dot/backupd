@@ -31,53 +31,5 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 app.include_router(list_router)
 app.include_router(backup_router)
-# app.include_router(restore_router)
+app.include_router(restore_router)
 app.add_middleware(APIMetricsMiddleware)
-
-
-# @app.post("/backup")
-# async def backup_all_containers(
-#     client: Client,
-#     queue: AppQueue,
-# ) -> list[ContainerModel]:
-#     containers = await ContainerInspect.all(client)
-#
-#     jobs = map(BackupJob.for_container, containers)
-#     await queue.put(*chain.from_iterable(jobs))
-#
-#     return list(map(ContainerModel.from_inspect, containers))
-#
-#
-# @app.post("/backup/{name}")
-# async def backup_container(
-#     name: str,
-#     response: Response,
-#     client: Client,
-#     queue: AppQueue,
-# ) -> ContainerModel | None:
-#     container = await ContainerInspect.by_name(client, name)
-#     if container is None:
-#         response.status_code = HTTPStatus.NOT_FOUND
-#         return None
-#
-#     jobs = BackupJob.for_container(container)
-#     await queue.put(*jobs)
-#
-#     return ContainerModel.from_inspect(container)
-#
-#
-# @app.post("/restore/container/{name}")
-# async def restore_container_latest(
-#     name: str, response: Response, client: Client
-# ) -> None:
-#     inspect = await ContainerInspect.by_name(client, name)
-#
-#     if inspect is None:
-#         response.status_code = HTTPStatus.NOT_FOUND
-#         return
-#
-#     for volume in inspect.Mounts:
-#         result = await run_container(
-#             client, restore_latest(volume.Name), "backupd-restore"
-#         )
-#         print(result)

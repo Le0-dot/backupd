@@ -1,11 +1,10 @@
 import asyncio
 from collections.abc import Iterable
-import json
 from typing import Annotated, Literal, NamedTuple, Self
 
 from aiodocker import Docker, DockerError
 from fastapi import Depends
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel
 
 from backupd.settings import Settings
 
