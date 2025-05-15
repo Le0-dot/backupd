@@ -5,7 +5,7 @@ from fastapi import APIRouter, Response
 from pydantic import BaseModel, TypeAdapter
 
 from backupd.docker import Client, ContainerInspect, VolumeInspect, run_container
-from backupd.restic.flags import Group, Tag
+from backupd.restic.flags import Group, TagFlag
 from backupd.restic.snapshots import Snapshot, SnapshotGroupping, snapshots
 
 router = APIRouter(prefix="/list")
@@ -89,7 +89,7 @@ async def list_all_snapshots(
 async def list_snapshots_for_volume(
     name: str, response: Response, client: Client
 ) -> list[Snapshot] | None:
-    configuration = snapshots([Tag.volume(name)], Group())
+    configuration = snapshots([TagFlag.for_volume(name)], Group())
 
     result = await run_container(client, configuration, "backupd-retrieve")
     if not result.success:
@@ -109,7 +109,7 @@ async def list_snapshots_for_container(
         response.status_code = HTTPStatus.NOT_FOUND
         return None
 
-    tags = [Tag.volume(volume.Name) for volume in container.volumes]
+    tags = [TagFlag.for_volume(volume.Name) for volume in container.volumes]
     configuration = snapshots(tags, Group.tags())
 
     result = await run_container(client, configuration, "backupd-retrieve")

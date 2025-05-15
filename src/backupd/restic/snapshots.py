@@ -2,10 +2,9 @@ from datetime import datetime
 from pathlib import Path
 
 from pydantic import BaseModel
-from starlette.requests import empty_receive
 
 from backupd.docker import ContainerCreate, Mount
-from backupd.restic.flags import Group, Tag
+from backupd.restic.flags import Group, TagFlag
 from backupd.settings import RepositorySettings, Settings
 
 
@@ -38,7 +37,7 @@ class SnapshotGroupping(BaseModel):
     snapshots: list[Snapshot]
 
 
-def snapshots(tags: list[Tag], groupping: Group) -> ContainerCreate:
+def snapshots(tags: list[TagFlag], groupping: Group) -> ContainerCreate:
     settings = Settings()
     repository = RepositorySettings()
 
@@ -47,11 +46,10 @@ def snapshots(tags: list[Tag], groupping: Group) -> ContainerCreate:
         [path] = repository.restic.location
         mount = Mount(Target=path, Source=path, Type="bind", ReadOnly=False)
 
-    tag_flags = " ".join(tag.flag for tag in tags)
 
     return ContainerCreate.shell(
         image=settings.runner_image,
-        cmd=f"restic --json snapshots {tag_flags} {groupping.flag}",
+        cmd=f"restic --json snapshots {snapshot_id}",
         env=repository.env,
         mounts=[mount],
     )
