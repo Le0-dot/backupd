@@ -2,6 +2,20 @@
 
 Backup all your docker containers with ease.
 
+
+## Features
+
+- [x] Backuping individual volume
+- [x] Backuping volumes for container
+- [x] Restoring individual volume from any snapshot
+- [x] Restoring volumes for container from latest snapshots
+- [x] Exporting metrics in [prometheus](https://prometheus.io) compatible format
+- [x] Support for `rclone` restic repositories
+- [ ] Structured logging in logfmt format
+- [ ] Forgeting of old snapshots
+- [ ] Support for all restic repositories
+
+
 ## Installation
 
 Get the latest docker tag from release page, or use ghcr.io/le0-dot/backupd:latest
@@ -13,11 +27,16 @@ docker pull ghcr.io/le0-dot/backupd:<tag>
 
 ### Configuration
 
-Backupd is configured only with environment variables.
+Backupd is configured exclusively with environment variables.
 
 - `BACKUPD_RUNNER_IMAGE` - image that will be runnning the backups, should include executables for `sh`, `restic` and optionally `rclone` if used.
-- `BACKUPD_HOSTNAME` (Optional, default: `backupd`) - hostname that will be set for backup in restic.
+- `BACKUPD_TIMEOUT_SECONDS` (Optional, default: `300`) - maximum time for backup to run, consider increasing for huge volumes or bad latency.
+- `BACKUPD_ABORT_ON_FAILURE` (Optional, default: `true`) - wherever to fail immedeatly in bulk backup/restore jobs.
 - `DOCKER_HOST` (Optional) - should be used if you do not wish to mount docker socket directly to the container, see [docker documentation](https://docs.docker.com/reference/cli/docker/#environment-variables)
+- `RESTIC_REPOSITORY` - as per [restic documentation](https://restic.readthedocs.io/en/stable/040_backup.html#environment-variables)
+- `RESTIC_PASSWORD` - as per [restic documentation](https://restic.readthedocs.io/en/stable/040_backup.html#environment-variables)
+- `RESTIC_HOST` (Optional, default: `backupd`) - as per [restic documentation](https://restic.readthedocs.io/en/stable/040_backup.html#environment-variables)
+- `RCLONE_*`, `RCLONE_CONFIG_*` (Optional) - as per [rclone documentation](https://rclone.org/docs/#environment-variables)
 
 
 ### Endpoints
@@ -33,26 +52,15 @@ Backupd exposes a number of HTTP endpoints:
 - GET `/list/snapshot` - list all snapshots
 - GET `/list/snapshot/volume/{name}` - list all snapshots for volume
 - GET `/list/snapshot/container/{name}` - list all snapshots for container
-- GET `/backup/volume` - backup all volumes
-- GET `/backup/volume/{name}` - backup volume
-- GET `/backup/container` - backup all volumes for all container running containers
-- GET `/backup/container/{name}` - backup all volumes for container
-- GET `/restore/volume/{name}` - restore volume from latest snapshot
-- GET `/restore/volume/{name}/{snapshot}` - restore volume from snapshot
-- GET `/restore/container/{name}` - restore all volumes for container from their latest snapshot
-- GET `/metrics` to collect [prometheus](https://prometheus.io) metrics for monitoring and alerting
-- GET `/docs` to view [Swagger UI](https://swagger.io/tools/swagger-ui)
-
-## Features
-
-- [x] Backuping individual volume
-- [x] Backuping volumes for container
-- [x] Restoring individual volume from any snapshot
-- [x] Restoring volumes for container from latest snapshots
-- [x] Exporting metrics in [prometheus](https://prometheus.io) compatible format
-- [x] Support for `rclone` restic repositories
-- [ ] Forgeting of old snapshots
-- [ ] Support for all restic repositories
+- POST `/backup/volume` - backup all volumes
+- POST `/backup/volume/{name}` - backup volume
+- POST `/backup/container` - backup all volumes for all container running containers
+- POST `/backup/container/{name}` - backup all volumes for container
+- POST `/restore/volume/{name}` - restore volume from latest snapshot
+- POST `/restore/volume/{name}/{snapshot}` - restore volume from snapshot
+- POST `/restore/container/{name}` - restore all volumes for container from their latest snapshot
+- GET `/metrics` - collect [prometheus](https://prometheus.io) metrics for monitoring and alerting
+- GET `/docs` - view [Swagger UI](https://swagger.io/tools/swagger-ui)
 
 ## Examples
 
@@ -64,12 +72,11 @@ services:
     container_name: backupd
     restart: unless-stopped
     ports:
-      - 127.0.0.1:9988:9988
+      - 127.0.0.1:9988:9988 # Expose backupd only to localhost
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock # Or set DOCKER_HOST
     environment:
       - BACKUPD_RUNNER_IMAGE=docker.io/instrumentisto/restic:0.18.0 # Includes restic and rclone
-      # - BACKUPD_HOSTNAME=...
       # - DOCKER_HOST=...
 
       - RESTIC_REPOSITORY=...
