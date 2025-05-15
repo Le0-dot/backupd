@@ -107,6 +107,6 @@ class RepositorySettings(BaseSettings):
             key = "_".join(path).upper()
             return f"{key}={value}"
 
-        tree = DictTree(self.model_dump())
+        tree = DictTree(self.model_dump(exclude_none=True))
         variables = starmap(to_env, tree)
         return list(variables)
