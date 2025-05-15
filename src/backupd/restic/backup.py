@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from backupd.docker import ContainerCreate, Mount
 from backupd.restic.flags import Tag, Group
+from backupd.restic.error import Error, ExitError
 from backupd.settings import RepositorySettings, Settings
 
 
@@ -41,24 +42,13 @@ class BackupVerboseStatus(BaseModel):
     total_files: int
 
 
-class BackupError(BaseModel):
-    """
-    https://restic.readthedocs.io/en/latest/075_scripting.html#error
-    """
-
-    message_type: Literal["error"]
-    # error.message: str
-    during: str
-    item: str
-
-
 class BackupSummary(BaseModel):
     """
     https://restic.readthedocs.io/en/stable/075_scripting.html#summary
     """
 
     message_type: Literal["summary"]
-    dry_run: bool | None = None
+    dry_run: bool = False
     files_new: int
     files_changed: int
     files_unmodified: int
@@ -78,7 +68,7 @@ class BackupSummary(BaseModel):
 
 
 BackupMessage = Annotated[
-    BackupStatus | BackupVerboseStatus | BackupError | BackupSummary,
+    BackupStatus | BackupVerboseStatus | BackupSummary | Error | ExitError,
     Field(discriminator="message_type"),
 ]
 

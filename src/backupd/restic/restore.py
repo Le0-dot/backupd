@@ -2,6 +2,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field
 
 from backupd.docker import ContainerCreate, Mount
+from backupd.restic.error import Error, ExitError
 from backupd.settings import RepositorySettings, Settings
 
 
@@ -28,20 +29,9 @@ class RestoreVerboseStatus(BaseModel):
     """
 
     message_type: Literal["verbose_status"]
-    action: Literal["restored", "updated", "updated", "updated"]
+    action: Literal["restored", "updated", "unchanged", "deleted"]
     item: str
     size: int
-
-
-class RestoreError(BaseModel):
-    """
-    https://restic.readthedocs.io/en/latest/075_scripting.html#id5
-    """
-
-    message_type: Literal["error"]
-    # error.message: str
-    during: str
-    item: int
 
 
 class RestoreSummary(BaseModel):
@@ -50,18 +40,18 @@ class RestoreSummary(BaseModel):
     """
 
     message_type: Literal["summary"]
-    seconds_elapsed: int
-    total_files: int
-    files_restored: int
-    files_skipped: int
-    files_deleted: int
-    total_bytes: int
-    bytes_restored: int
-    bytes_skipped: int
+    seconds_elapsed: int | None = None
+    total_files: int | None = None
+    files_restored: int | None = None
+    files_skipped: int | None = None
+    files_deleted: int | None = None
+    total_bytes: int | None = None
+    bytes_restored: int | None = None
+    bytes_skipped: int | None = None
 
 
 RestoreMessage = Annotated[
-    RestoreStatus | RestoreVerboseStatus | RestoreError | RestoreSummary,
+    RestoreStatus | RestoreVerboseStatus | RestoreSummary | Error | ExitError,
     Field(discriminator="message_type"),
 ]
 
