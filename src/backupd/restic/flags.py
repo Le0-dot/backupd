@@ -1,11 +1,9 @@
+from collections.abc import Set
 from dataclasses import dataclass, field
 from typing import Literal, Self, override
 
 
-@dataclass(frozen=True)
-class Tag:
-    value: str
-
+class Tag(str):
     @classmethod
     def for_app(cls) -> Self:
         return cls("backupd")
@@ -16,27 +14,24 @@ class Tag:
 
     @property
     def volume(self) -> str | None:
-        if self.value.startswith("volume:"):
-            return self.value.removeprefix("volume:")
+        if self.startswith("volume:"):
+            return self.removeprefix("volume:")
         return None
 
 
-@dataclass
-class TagFlag:
+class TagFlag(set[Tag]):
     """
     Represents individual `--tag` flag for the restic
     """
 
-    tags: set[Tag] = field(default_factory=set)
-
-    def __or__(self, value: Self, /) -> "TagFlag":
-        return TagFlag(self.tags | value.tags)
+    @override
+    def __or__(self, value: Set[Tag], /) -> "TagFlag":
+        return TagFlag(super().__or__(value))
 
     @override
     def __str__(self) -> str:
-        if self.tags:
-            tags = map(lambda t: t.value, self.tags)
-            return f"--tag {','.join(tags)}"
+        if self:
+            return f"--tag {','.join(self)}"
         return ""
 
     @classmethod

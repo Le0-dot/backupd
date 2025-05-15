@@ -1,10 +1,17 @@
 from http import HTTPStatus
+from typing import Literal
+
 from fastapi import APIRouter, Response
 from pydantic import TypeAdapter
 
-from backupd.docker import Client, ContainerInspect, VolumeInspect, run_container
-from backupd.restic.flags import Tag
-from backupd.restic.restore import RestoreMessage, restore, restore_latest
+from backupd.docker import (
+    Client,
+    ContainerInspect,
+    VolumeInspect,
+    run_container,
+)
+from backupd.metrics import restore_result
+from backupd.restic.restore import RestoreMessage, restore
 from backupd.restic.snapshots import Snapshot, snapshot_by_id
 from backupd.settings import Settings
 
@@ -14,67 +21,35 @@ type VolumeRestore = list[RestoreMessage]
 type ContainerRestore = dict[str, VolumeRestore]
 
 
-async def run_restore_latest(client: Client, volume: str) -> tuple[bool, VolumeRestore]:
-    configuration = restore_latest(volume)
+async def run_restore(
+    client: Client, volume: str, snapshot_id: str | Literal["latest"]
+) -> tuple[bool, VolumeRestore]:
+    configuration = restore(volume, snapshot_id)
     result = await run_container(client, configuration, "backupd-restore")
 
     lines = result.stdout.splitlines() + result.stderr.splitlines()
     adapter: TypeAdapter[RestoreMessage] = TypeAdapter(RestoreMessage)
     messages = list(map(adapter.validate_json, lines))
+
+    status = ["failure", "success"][result.success]
+    restore_result.labels(volume, status).inc()
 
     return result.success, messages
 
 
-@router.post("/restore/{snapshot}")
-async def restore_snapshot(
-    snapshot_id: str, response: Response, client: Client
-) -> VolumeRestore | None:
-    configuration = snapshot_by_id(snapshot_id)
-    result = await run_container(client, configuration, "backupd-retrieve")
-
-    if not result.success:
-        response.status_code = HTTPStatus.NOT_FOUND
-        return None
-
-    try:
-        [snapshot] = TypeAdapter(list[Snapshot]).validate_json(result.stdout)
-    except ValueError:
-        response.status_code = HTTPStatus.BAD_REQUEST
-        return None
-
-    tags = map(Tag, snapshot.tags or [])
-    volumes = map(lambda t: t.volume, tags)
-
-    try:
-        [volume] = list(filter(None, volumes))
-    except ValueError:
-        response.status_code = HTTPStatus.BAD_REQUEST
-        return None
-
-    configuration = restore(snapshot_id, volume)
-    result = await run_container(client, configuration, "backupd-restore")
-
-    lines = result.stdout.splitlines() + result.stderr.splitlines()
-    adapter: TypeAdapter[RestoreMessage] = TypeAdapter(RestoreMessage)
-    messages = list(map(adapter.validate_json, lines))
-
-    if not result.success:
-        response.status_code = HTTPStatus.FAILED_DEPENDENCY
-
-    return messages
-
-
-@router.post("/restore/volume/{name}")
-async def restore_volume(
+@router.post("/volume/{name}")
+async def restore_latest_volume(
     name: str, response: Response, client: Client
 ) -> VolumeRestore | None:
+    # Check if volume exists
     volume = await VolumeInspect.by_name(client, name)
 
     if volume is None:
         response.status_code = HTTPStatus.NOT_FOUND
         return None
 
-    success, messages = await run_restore_latest(client, name)
+    # Run restoration process
+    success, messages = await run_restore(client, name, "latest")
 
     if not success:
         response.status_code = HTTPStatus.FAILED_DEPENDENCY
@@ -82,7 +57,40 @@ async def restore_volume(
     return messages
 
 
-@router.post("/restore/container/{name}")
+@router.post("/volume/{name}/{snapshot_id}")
+async def restore_volume(
+    name: str, snapshot_id: str, response: Response, client: Client
+) -> VolumeRestore | None:
+    # Check if volume exists
+    volume = await VolumeInspect.by_name(client, name)
+
+    if volume is None:
+        response.status_code = HTTPStatus.NOT_FOUND
+        return None
+
+    # Check if snapshot exists and is for the volume
+    configuration = snapshot_by_id(snapshot_id)
+    result = await run_container(client, configuration, "backupd-retrieve")
+
+    if not result.success:
+        response.status_code = HTTPStatus.NOT_FOUND
+        return None
+
+    [snapshot] = TypeAdapter(list[Snapshot]).validate_json(result.stdout)
+    if not snapshot.is_for(name):
+        response.status_code = HTTPStatus.BAD_REQUEST
+        return None
+
+    # Run restoration process
+    success, messages = await run_restore(client, name, snapshot_id)
+
+    if not success:
+        response.status_code = HTTPStatus.FAILED_DEPENDENCY
+
+    return messages
+
+
+@router.post("/container/{name}")
 async def restore_container(
     name: str, response: Response, client: Client
 ) -> ContainerRestore | None:
@@ -96,7 +104,7 @@ async def restore_container(
 
     messages: dict[str, VolumeRestore] = {}
     for volume in container.volumes:
-        success, restore_messages = await run_restore_latest(client, volume.Name)
+        success, restore_messages = await run_restore(client, volume.Name, "latest")
 
         messages[volume.Name] = restore_messages
 

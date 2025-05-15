@@ -57,7 +57,7 @@ RestoreMessage = Annotated[
 ]
 
 
-def restore(snapshot: str, volume: str) -> ContainerCreate:
+def restore(volume: str, snapshot_id: str | Literal["latest"]) -> ContainerCreate:
     settings = Settings()
     repository = RepositorySettings()
 
@@ -70,28 +70,7 @@ def restore(snapshot: str, volume: str) -> ContainerCreate:
 
     return ContainerCreate.shell(
         image=settings.runner_image,
-        cmd=f"restic --verbose=2 --json restore {snapshot}:data --target /data",
-        env=repository.env,
-        mounts=[repo_mount, data_mount],
-    )
-
-
-def restore_latest(volume: str) -> ContainerCreate:
-    settings = Settings()
-    repository = RepositorySettings()
-
-    repo_mount: Mount | None = None
-    if repository.restic.backend == "local":
-        [path] = repository.restic.location
-        repo_mount = Mount(Target=path, Source=path, Type="bind", ReadOnly=False)
-
-    data_mount = Mount(Target="/data", Source=volume, Type="volume", ReadOnly=False)
-
-    tag = TagFlag.for_volume(volume)
-
-    return ContainerCreate.shell(
-        image=settings.runner_image,
-        cmd=f"restic --verbose=2 --json restore latest:data {tag} --target /data",
+        cmd=f"restic --verbose=2 --json restore {snapshot_id}:data {TagFlag.for_volume(volume)} --target /data",
         env=repository.env,
         mounts=[repo_mount, data_mount],
     )

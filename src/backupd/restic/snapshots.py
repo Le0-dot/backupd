@@ -4,7 +4,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from backupd.docker import ContainerCreate, Mount
-from backupd.restic.flags import Group, TagFlag
+from backupd.restic.flags import Group, Tag, TagFlag
 from backupd.settings import RepositorySettings, Settings
 
 
@@ -26,10 +26,13 @@ class Snapshot(BaseModel):
     hostname: str
     username: str
     excludes: list[str] | None = None
-    tags: list[str] | None = None
+    tags: list[str] = []
     program_version: str
     id: str
     short_id: str
+
+    def is_for(self, volume: str) -> bool:
+        return Tag.for_volume(volume) in self.tags
 
 
 class SnapshotGroupping(BaseModel):

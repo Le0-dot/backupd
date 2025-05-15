@@ -37,13 +37,24 @@ Backupd exposes a number of HTTP endpoints:
 - GET `/backup/volume/{name}` - backup volume
 - GET `/backup/container` - backup all volumes for all container running containers
 - GET `/backup/container/{name}` - backup all volumes for container
-- GET `/restore/{snapshot}` - restore volume from snapshot
 - GET `/restore/volume/{name}` - restore volume from latest snapshot
+- GET `/restore/volume/{name}/{snapshot}` - restore volume from snapshot
 - GET `/restore/container/{name}` - restore all volumes for container from their latest snapshot
 - GET `/metrics` to collect [prometheus](https://prometheus.io) metrics for monitoring and alerting
 - GET `/docs` to view [Swagger UI](https://swagger.io/tools/swagger-ui)
 
 All `/backup` endpoints additionally recieve POST body with information about restic repository (As of right now, only local and rclone repositories are supported). The exact format of required HTTP body could be seen at `/docs` endpoint.
+
+## Features
+
+- [x] Backuping individual volume
+- [x] Backuping volumes for container
+- [x] Restoring individual volume from any snapshot
+- [x] Restoring volumes for container from latest snapshots
+- [x] Exporting metrics in [prometheus](https://prometheus.io) compatible format
+- [x] Support for `rclone` restic repositories
+- [ ] Forgeting of old snapshots
+- [ ] Support for all restic repositories
 
 ## Examples
 
