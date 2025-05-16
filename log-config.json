@@ -1,0 +1,23 @@
+{
+    "version": 1,
+    "disable_existing_loggers": true,
+    "formatters": {
+        "logfmt": {
+            "()": "logfmter.Logfmter",
+            "keys": ["level", "when"],
+            "mapping": {"level": "levelname", "when": "asctime"}
+        }
+    },
+    "handlers": {
+        "stdout": {
+            "class": "logging.StreamHandler",
+            "level": "DEBUG",
+            "stream": "ext://sys.stdout",
+            "formatter": "logfmt"
+        }
+    },
+    "root": {
+        "level": "DEBUG",
+        "handlers": ["stdout"]
+    }
+}

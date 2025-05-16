@@ -65,7 +65,7 @@ class ContainerWait(BaseModel):
 
 class MountPoint(BaseModel):
     Type: Literal["bind", "volume", "image", "tmpfs", "npipe", "cluster"]
-    Name: str
+    Name: str | None = None
     Destination: str
 
 
@@ -83,8 +83,10 @@ class ContainerInspect(BaseModel):
         return self.Name.removeprefix("/")
 
     @property
-    def volumes(self) -> Iterable[MountPoint]:
-        return filter(lambda m: m.Type == "volume", self.Mounts)
+    def volumes(self) -> Iterable[str]:
+        volumes = filter(lambda m: m.Type == "volume", self.Mounts)
+        names = map(lambda m: m.Name, volumes)
+        return filter(None, names)
 
     @classmethod
     async def all(cls, client: Docker) -> list[Self]:

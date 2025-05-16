@@ -1,9 +1,4 @@
-from collections.abc import Awaitable
-from typing import Callable, override
-
-from fastapi import Request, Response
 from prometheus_client import Counter, Histogram
-from starlette.middleware.base import BaseHTTPMiddleware
 
 api_calls = Counter(
     name="api_calls",
@@ -29,17 +24,3 @@ restore_result = Counter(
     labelnames=("volume", "status"),
     namespace="backupd",
 )
-
-
-class APIMetricsMiddleware(BaseHTTPMiddleware):
-    @override
-    async def dispatch(
-        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
-    ) -> Response:
-        response = await call_next(request)
-
-        api_calls.labels(
-            path=request.url.path, method=request.method, status=response.status_code
-        ).inc()
-
-        return response

@@ -11,7 +11,7 @@ Backup all your docker containers with ease.
 - [x] Restoring volumes for container from latest snapshots
 - [x] Exporting metrics in [prometheus](https://prometheus.io) compatible format
 - [x] Support for `rclone` restic repositories
-- [ ] Structured logging in logfmt format
+- [x] Structured logging in logfmt format
 - [ ] Forgeting of old snapshots
 - [ ] Support for all restic repositories
 

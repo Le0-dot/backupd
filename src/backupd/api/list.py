@@ -25,8 +25,7 @@ class ContainerModel(BaseModel):
 
     @classmethod
     def from_inspect(cls, inspect: ContainerInspect) -> Self:
-        volumes = map(lambda m: m.Name, inspect.volumes)
-        return cls(name=inspect.name, volumes=list(volumes))
+        return cls(name=inspect.name, volumes=list(inspect.volumes))
 
 
 @router.get("/volume")
@@ -109,8 +108,8 @@ async def list_snapshots_for_container(
         response.status_code = HTTPStatus.NOT_FOUND
         return None
 
-    tags = [TagFlag.for_volume(volume.Name) for volume in container.volumes]
-    configuration = snapshots(tags, Group.tags())
+    tags = map(TagFlag.for_volume, container.volumes)
+    configuration = snapshots(list(tags), Group.tags())
 
     result = await run_container(client, configuration, "backupd-retrieve")
     if not result.success:

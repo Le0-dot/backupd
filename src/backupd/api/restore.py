@@ -1,3 +1,4 @@
+import logging
 from http import HTTPStatus
 from typing import Literal
 
@@ -24,6 +25,8 @@ type ContainerRestore = dict[str, VolumeRestore]
 async def run_restore(
     client: Client, volume: str, snapshot_id: str | Literal["latest"]
 ) -> tuple[bool, VolumeRestore]:
+    logging.debug("staring volume restoreation", extra={"volume": volume})
+
     configuration = restore(volume, snapshot_id)
     result = await run_container(client, configuration, "backupd-restore")
 
@@ -33,6 +36,18 @@ async def run_restore(
 
     status = ["failure", "success"][result.success]
     restore_result.labels(volume, status).inc()
+
+    level = [logging.ERROR, logging.INFO][result.success]
+    logging.log(
+        level, "finished volume restoration", extra={"volume": volume, "status": status}
+    )
+
+    logging.debug(
+        result.stdout, extra={"volume": volume, "status": status, "stream": "stdout"}
+    )
+    logging.debug(
+        result.stderr, extra={"volume": volume, "status": status, "stream": "stderr"}
+    )
 
     return result.success, messages
 
@@ -104,9 +119,9 @@ async def restore_container(
 
     messages: dict[str, VolumeRestore] = {}
     for volume in container.volumes:
-        success, restore_messages = await run_restore(client, volume.Name, "latest")
+        success, restore_messages = await run_restore(client, volume, "latest")
 
-        messages[volume.Name] = restore_messages
+        messages[volume] = restore_messages
 
         if not success:
             response.status_code = HTTPStatus.FAILED_DEPENDENCY

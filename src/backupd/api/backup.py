@@ -1,11 +1,13 @@
+import logging
 from collections.abc import Iterable
 from http import HTTPStatus
 from typing import cast
+
 from fastapi import APIRouter, Response
 from pydantic import TypeAdapter
 
 from backupd.docker import Client, ContainerInspect, VolumeInspect, run_container
-from backupd.metrics import backup_result, backup_duration
+from backupd.metrics import backup_duration, backup_result
 from backupd.restic.backup import BackupMessage, BackupSummary, backup
 from backupd.settings import Settings
 
@@ -17,6 +19,8 @@ type ConatinersBackup = dict[str, BulkBackup]
 
 
 async def run_backup(client: Client, volume: str) -> tuple[bool, VolumeBackup]:
+    logging.debug("starting volume backup", extra={"volume": volume})
+
     configuration = backup(volume)
     result = await run_container(client, configuration, "backupd-backup")
 
@@ -27,10 +31,26 @@ async def run_backup(client: Client, volume: str) -> tuple[bool, VolumeBackup]:
     status = ["failure", "success"][result.success]
     backup_result.labels(volume, status).inc()
 
+    extra: dict[str, float] = {}
     if result.success:
         summary = next(filter(lambda m: isinstance(m, BackupSummary), messages))
         summary = cast(BackupSummary, summary)
         backup_duration.labels(volume).observe(summary.total_duration)
+        extra["duration"] = summary.total_duration
+
+    level = [logging.ERROR, logging.INFO][result.success]
+    logging.log(
+        level,
+        "finished volume backup",
+        extra={"volume": volume, "status": status} | extra,
+    )
+
+    logging.debug(
+        result.stdout, extra={"volume": volume, "status": status, "stream": "stdout"}
+    )
+    logging.debug(
+        result.stderr, extra={"volume": volume, "status": status, "stream": "stderr"}
+    )
 
     return result.success, messages
 
@@ -93,9 +113,8 @@ async def backup_all_conatiner(response: Response, client: Client) -> Conatiners
 
     messages: ConatinersBackup = {}
     for container in containers:
-        names = map(lambda v: v.Name, container.volumes)
         success, backup_messages = await run_bulk_backup(
-            client, names, settings.abort_on_failure
+            client, container.volumes, settings.abort_on_failure
         )
 
         messages[container.name] = backup_messages
@@ -120,8 +139,9 @@ async def backup_container(
         response.status_code = HTTPStatus.NOT_FOUND
         return None
 
-    names = map(lambda v: v.Name, container.volumes)
-    success, messages = await run_bulk_backup(client, names, settings.abort_on_failure)
+    success, messages = await run_bulk_backup(
+        client, container.volumes, settings.abort_on_failure
+    )
 
     if not success:
         response.status_code = HTTPStatus.FAILED_DEPENDENCY
