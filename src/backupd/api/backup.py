@@ -4,11 +4,11 @@ from http import HTTPStatus
 from typing import cast
 
 from fastapi import APIRouter, Response
-from pydantic import TypeAdapter
 
 from backupd.docker import Client, ContainerInspect, VolumeInspect, run_container
 from backupd.metrics import backup_duration, backup_result
 from backupd.restic.backup import BackupMessage, BackupSummary, backup
+from backupd.restic.common import parse_messages
 from backupd.settings import Settings
 
 router = APIRouter(prefix="/backup")
@@ -24,9 +24,9 @@ async def run_backup(client: Client, volume: str) -> tuple[bool, VolumeBackup]:
     configuration = backup(volume)
     result = await run_container(client, configuration, "backupd-backup")
 
-    lines = result.stdout.splitlines() + result.stderr.splitlines()
-    adapter: TypeAdapter[BackupMessage] = TypeAdapter(BackupMessage)
-    messages = list(map(adapter.validate_json, lines))
+    messages = parse_messages(
+        cast(type[BackupMessage], BackupMessage), result.stdout, result.stderr
+    )
 
     status = ["failure", "success"][result.success]
     backup_result.labels(volume, status).inc()
@@ -113,8 +113,10 @@ async def backup_all_conatiner(response: Response, client: Client) -> Conatiners
 
     messages: ConatinersBackup = {}
     for container in containers:
+        volumes = await container.volumes(client)
+        names = [volume.Name for volume in volumes]
         success, backup_messages = await run_bulk_backup(
-            client, container.volumes, settings.abort_on_failure
+            client, names, settings.abort_on_failure
         )
 
         messages[container.name] = backup_messages
@@ -139,9 +141,9 @@ async def backup_container(
         response.status_code = HTTPStatus.NOT_FOUND
         return None
 
-    success, messages = await run_bulk_backup(
-        client, container.volumes, settings.abort_on_failure
-    )
+    volumes = await container.volumes(client)
+    names = [volume.Name for volume in volumes]
+    success, messages = await run_bulk_backup(client, names, settings.abort_on_failure)
 
     if not success:
         response.status_code = HTTPStatus.FAILED_DEPENDENCY

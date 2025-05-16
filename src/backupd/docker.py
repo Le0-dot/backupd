@@ -20,6 +20,36 @@ async def make_client():
 Client = Annotated[Docker, Depends(make_client)]
 
 
+class VolumeInspect(BaseModel):
+    """
+    https://docs.docker.com/reference/api/engine/version/v1.43/#tag/Volume/operation/VolumeInspect
+    """
+
+    Name: str
+    Driver: str
+    Mountpoint: str
+    Labels: dict[str, str] | None = None
+
+    @property
+    def anonymous(self) -> bool:
+        return "com.docker.volume.anonymous" in (self.Labels or {})
+
+    @classmethod
+    async def all(cls, client: Docker) -> list[Self]:
+        volumes = await client.volumes.list()
+        return [cls.model_validate(volume) for volume in volumes["Volumes"]]
+
+    @classmethod
+    async def by_name(cls, client: Docker, name: str) -> Self | None:
+        try:
+            volume = await client.volumes.get(name)
+        except DockerError:
+            return None
+
+        raw = await volume.show()
+        return cls.model_validate(raw)
+
+
 class Mount(BaseModel):
     Target: str
     Source: str
@@ -82,11 +112,12 @@ class ContainerInspect(BaseModel):
     def name(self) -> str:
         return self.Name.removeprefix("/")
 
-    @property
-    def volumes(self) -> Iterable[str]:
+    async def volumes(self, client: Client) -> Iterable[VolumeInspect]:
         volumes = filter(lambda m: m.Type == "volume", self.Mounts)
-        names = map(lambda m: m.Name, volumes)
-        return filter(None, names)
+        names = filter(None, map(lambda m: m.Name, volumes))
+        inspect = [await VolumeInspect.by_name(client, name) for name in names]
+        filtered = filter(None, inspect)
+        return filter(lambda v: not v.anonymous, filtered)
 
     @classmethod
     async def all(cls, client: Docker) -> list[Self]:
@@ -102,36 +133,6 @@ class ContainerInspect(BaseModel):
             return None
 
         raw = await container.show()
-        return cls.model_validate(raw)
-
-
-class VolumeInspect(BaseModel):
-    """
-    https://docs.docker.com/reference/api/engine/version/v1.43/#tag/Volume/operation/VolumeInspect
-    """
-
-    Name: str
-    Driver: str
-    Mountpoint: str
-    Labels: dict[str, str] | None = None
-
-    @property
-    def anonymous(self) -> bool:
-        return "com.docker.volume.anonymous" in (self.Labels or {})
-
-    @classmethod
-    async def all(cls, client: Docker) -> list[Self]:
-        volumes = await client.volumes.list()
-        return [cls.model_validate(volume) for volume in volumes["Volumes"]]
-
-    @classmethod
-    async def by_name(cls, client: Docker, name: str) -> Self | None:
-        try:
-            volume = await client.volumes.get(name)
-        except DockerError:
-            return None
-
-        raw = await volume.show()
         return cls.model_validate(raw)
 
 

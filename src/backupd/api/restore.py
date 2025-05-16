@@ -1,6 +1,6 @@
 import logging
 from http import HTTPStatus
-from typing import Literal
+from typing import Literal, cast
 
 from fastapi import APIRouter, Response
 from pydantic import TypeAdapter
@@ -12,6 +12,7 @@ from backupd.docker import (
     run_container,
 )
 from backupd.metrics import restore_result
+from backupd.restic.common import parse_messages
 from backupd.restic.restore import RestoreMessage, restore
 from backupd.restic.snapshots import Snapshot, snapshot_by_id
 from backupd.settings import Settings
@@ -30,9 +31,7 @@ async def run_restore(
     configuration = restore(volume, snapshot_id)
     result = await run_container(client, configuration, "backupd-restore")
 
-    lines = result.stdout.splitlines() + result.stderr.splitlines()
-    adapter: TypeAdapter[RestoreMessage] = TypeAdapter(RestoreMessage)
-    messages = list(map(adapter.validate_json, lines))
+    messages = parse_messages(cast(type[RestoreMessage], RestoreMessage), result.stdout, result.stderr)
 
     status = ["failure", "success"][result.success]
     restore_result.labels(volume, status).inc()
@@ -118,10 +117,12 @@ async def restore_container(
         return None
 
     messages: dict[str, VolumeRestore] = {}
-    for volume in container.volumes:
-        success, restore_messages = await run_restore(client, volume, "latest")
 
-        messages[volume] = restore_messages
+    volumes = await container.volumes(client)
+    for volume in volumes:
+        success, restore_messages = await run_restore(client, volume.Name, "latest")
+
+        messages[volume.Name] = restore_messages
 
         if not success:
             response.status_code = HTTPStatus.FAILED_DEPENDENCY

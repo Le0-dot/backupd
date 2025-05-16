@@ -1,11 +1,12 @@
 from http import HTTPStatus
+import logging
 from typing import Self
 
 from fastapi import APIRouter, Response
 from pydantic import BaseModel, TypeAdapter
 
 from backupd.docker import Client, ContainerInspect, VolumeInspect, run_container
-from backupd.restic.flags import Group, TagFlag
+from backupd.restic.flags import GroupFlag, TagFlag
 from backupd.restic.snapshots import Snapshot, SnapshotGroupping, snapshots
 
 router = APIRouter(prefix="/list")
@@ -24,8 +25,10 @@ class ContainerModel(BaseModel):
     volumes: list[str]
 
     @classmethod
-    def from_inspect(cls, inspect: ContainerInspect) -> Self:
-        return cls(name=inspect.name, volumes=list(inspect.volumes))
+    async def from_inspect(cls, client: Client, inspect: ContainerInspect) -> Self:
+        volumes = await inspect.volumes(client)
+        names = [volume.Name for volume in volumes]
+        return cls(name=inspect.name, volumes=names)
 
 
 @router.get("/volume")
@@ -52,8 +55,10 @@ async def list_volume(
 @router.get("/container")
 async def list_all_containers(client: Client) -> list[ContainerModel]:
     containers = await ContainerInspect.all(client)
-    models = map(ContainerModel.from_inspect, containers)
-    return list(models)
+    models = [
+        await ContainerModel.from_inspect(client, container) for container in containers
+    ]
+    return models
 
 
 @router.get("/container/{name}")
@@ -66,16 +71,25 @@ async def list_container(
         response.status_code = HTTPStatus.NOT_FOUND
         return None
 
-    return ContainerModel.from_inspect(container)
+    return await ContainerModel.from_inspect(client, container)
 
 
 @router.get("/snapshot")
 async def list_all_snapshots(
     response: Response, client: Client
 ) -> list[SnapshotGroupping] | None:
-    configuration = snapshots([], Group.tags())
+    configuration = snapshots([], GroupFlag.tags())
+    logging.debug("retrieving snapshots", extra={"cmd": configuration.Cmd})
 
     result = await run_container(client, configuration, "backupd-retrieve")
+
+    status = ["failure", "success"][result.success]
+    level = [logging.ERROR, logging.INFO][result.success]
+
+    logging.log(level, "finished retrieving snapshots", extra={"status": status})
+    logging.debug(result.stdout, extra={"status": status, "stream": "stdout"})
+    logging.debug(result.stderr, extra={"status": status, "stream": "stderr"})
+
     if not result.success:
         response.status_code = HTTPStatus.FAILED_DEPENDENCY
         return None
@@ -88,9 +102,18 @@ async def list_all_snapshots(
 async def list_snapshots_for_volume(
     name: str, response: Response, client: Client
 ) -> list[Snapshot] | None:
-    configuration = snapshots([TagFlag.for_volume(name)], Group())
+    configuration = snapshots([TagFlag.for_volume(name)], GroupFlag())
+    logging.debug("retrieving snapshots", extra={"cmd": configuration.Cmd})
 
     result = await run_container(client, configuration, "backupd-retrieve")
+
+    status = ["failure", "success"][result.success]
+    level = [logging.ERROR, logging.INFO][result.success]
+
+    logging.log(level, "finished retrieving snapshots", extra={"status": status})
+    logging.debug(result.stdout, extra={"status": status, "stream": "stdout"})
+    logging.debug(result.stderr, extra={"status": status, "stream": "stderr"})
+
     if not result.success:
         response.status_code = HTTPStatus.FAILED_DEPENDENCY
         return None
@@ -108,10 +131,20 @@ async def list_snapshots_for_container(
         response.status_code = HTTPStatus.NOT_FOUND
         return None
 
-    tags = map(TagFlag.for_volume, container.volumes)
-    configuration = snapshots(list(tags), Group.tags())
+    volumes = await container.volumes(client)
+    tags = [TagFlag.for_volume(volume.Name) for volume in volumes]
+    configuration = snapshots(tags, GroupFlag.tags())
+    logging.debug("retrieving snapshots", extra={"cmd": configuration.Cmd})
 
     result = await run_container(client, configuration, "backupd-retrieve")
+
+    status = ["failure", "success"][result.success]
+    level = [logging.ERROR, logging.INFO][result.success]
+
+    logging.log(level, "finished retrieving snapshots", extra={"status": status})
+    logging.debug(result.stdout, extra={"status": status, "stream": "stdout"})
+    logging.debug(result.stderr, extra={"status": status, "stream": "stderr"})
+
     if not result.success:
         response.status_code = HTTPStatus.FAILED_DEPENDENCY
         return None

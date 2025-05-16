@@ -4,8 +4,8 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field
 
 from backupd.docker import ContainerCreate, Mount
-from backupd.restic.error import Error, ExitError
-from backupd.restic.flags import TagFlag, Group
+from backupd.restic.common import Error, ExitError
+from backupd.restic.flags import TagFlag, GroupFlag
 from backupd.settings import RepositorySettings, Settings
 
 
@@ -85,7 +85,7 @@ def backup(volume: str) -> ContainerCreate:
     data_mount = Mount(Target="/data", Source=volume, Type="volume", ReadOnly=True)
 
     tag_flag = TagFlag.for_app() | TagFlag.for_volume(volume)
-    group_flag = Group.tags()
+    group_flag = GroupFlag.tags()
 
     return ContainerCreate.shell(
         image=settings.runner_image,

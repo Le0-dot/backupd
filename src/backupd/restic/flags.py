@@ -44,7 +44,7 @@ class TagFlag(set[Tag]):
 
 
 @dataclass
-class Group:
+class GroupFlag:
     """
     Represents `--group-by` flag for the restic
     """

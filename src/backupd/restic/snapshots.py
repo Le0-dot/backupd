@@ -4,7 +4,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from backupd.docker import ContainerCreate, Mount
-from backupd.restic.flags import Group, Tag, TagFlag
+from backupd.restic.flags import GroupFlag, Tag, TagFlag
 from backupd.settings import RepositorySettings, Settings
 
 
@@ -40,7 +40,7 @@ class SnapshotGroupping(BaseModel):
     snapshots: list[Snapshot]
 
 
-def snapshots(tags: list[TagFlag], groupping: Group) -> ContainerCreate:
+def snapshots(tags: list[TagFlag], groupping: GroupFlag) -> ContainerCreate:
     settings = Settings()
     repository = RepositorySettings()
 

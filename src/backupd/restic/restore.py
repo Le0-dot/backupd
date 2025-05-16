@@ -2,7 +2,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field
 
 from backupd.docker import ContainerCreate, Mount
-from backupd.restic.error import Error, ExitError
+from backupd.restic.common import Error, ExitError
 from backupd.restic.flags import TagFlag
 from backupd.settings import RepositorySettings, Settings
 
