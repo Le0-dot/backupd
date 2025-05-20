@@ -5,7 +5,7 @@ from typing import cast
 
 from fastapi import APIRouter, Response
 
-from backupd.docker import Client, ContainerInspect, VolumeInspect, run_container
+from backupd.docker import DockerClient, ContainerInspect, VolumeInspect, run_container
 from backupd.metrics import backup_duration, backup_result
 from backupd.restic.backup import BackupMessage, BackupSummary, backup
 from backupd.restic.common import parse_messages
@@ -18,7 +18,7 @@ type BulkBackup = dict[str, VolumeBackup]
 type ConatinersBackup = dict[str, BulkBackup]
 
 
-async def run_backup(client: Client, volume: str) -> tuple[bool, VolumeBackup]:
+async def run_backup(client: DockerClient, volume: str) -> tuple[bool, VolumeBackup]:
     logging.debug("starting volume backup", extra={"volume": volume})
 
     configuration = backup(volume)
@@ -56,7 +56,7 @@ async def run_backup(client: Client, volume: str) -> tuple[bool, VolumeBackup]:
 
 
 async def run_bulk_backup(
-    client: Client, volumes: Iterable[str], abort_on_failure: bool
+    client: DockerClient, volumes: Iterable[str], abort_on_failure: bool
 ) -> tuple[bool, BulkBackup]:
     success = True
     messages: BulkBackup = {}
@@ -73,7 +73,7 @@ async def run_bulk_backup(
 
 
 @router.post("/backup/volume")
-async def backup_all_volumes(response: Response, client: Client) -> BulkBackup:
+async def backup_all_volumes(response: Response, client: DockerClient) -> BulkBackup:
     settings = Settings()
 
     volumes = await VolumeInspect.all(client)
@@ -89,7 +89,7 @@ async def backup_all_volumes(response: Response, client: Client) -> BulkBackup:
 
 @router.post("/backup/volume/{name}")
 async def backup_volume(
-    name: str, response: Response, client: Client
+    name: str, response: Response, client: DockerClient
 ) -> VolumeBackup | None:
     volume = await VolumeInspect.by_name(client, name)
 
@@ -106,7 +106,9 @@ async def backup_volume(
 
 
 @router.post("/backup/container")
-async def backup_all_conatiner(response: Response, client: Client) -> ConatinersBackup:
+async def backup_all_conatiner(
+    response: Response, client: DockerClient
+) -> ConatinersBackup:
     settings = Settings()
 
     containers = await ContainerInspect.all(client)
@@ -132,7 +134,7 @@ async def backup_all_conatiner(response: Response, client: Client) -> Conatiners
 
 @router.post("/backup/container/{name}")
 async def backup_container(
-    name: str, response: Response, client: Client
+    name: str, response: Response, client: DockerClient
 ) -> BulkBackup | None:
     settings = Settings()
 

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Response
 from pydantic import TypeAdapter
 
 from backupd.docker import (
-    Client,
+    DockerClient,
     ContainerInspect,
     VolumeInspect,
     run_container,
@@ -24,14 +24,16 @@ type ContainerRestore = dict[str, VolumeRestore]
 
 
 async def run_restore(
-    client: Client, volume: str, snapshot_id: str | Literal["latest"]
+    client: DockerClient, volume: str, snapshot_id: str | Literal["latest"]
 ) -> tuple[bool, VolumeRestore]:
     logging.debug("staring volume restoreation", extra={"volume": volume})
 
     configuration = restore(volume, snapshot_id)
     result = await run_container(client, configuration, "backupd-restore")
 
-    messages = parse_messages(cast(type[RestoreMessage], RestoreMessage), result.stdout, result.stderr)
+    messages = parse_messages(
+        cast(type[RestoreMessage], RestoreMessage), result.stdout, result.stderr
+    )
 
     status = ["failure", "success"][result.success]
     restore_result.labels(volume, status).inc()
@@ -53,7 +55,7 @@ async def run_restore(
 
 @router.post("/volume/{name}")
 async def restore_latest_volume(
-    name: str, response: Response, client: Client
+    name: str, response: Response, client: DockerClient
 ) -> VolumeRestore | None:
     # Check if volume exists
     volume = await VolumeInspect.by_name(client, name)
@@ -73,7 +75,7 @@ async def restore_latest_volume(
 
 @router.post("/volume/{name}/{snapshot_id}")
 async def restore_volume(
-    name: str, snapshot_id: str, response: Response, client: Client
+    name: str, snapshot_id: str, response: Response, client: DockerClient
 ) -> VolumeRestore | None:
     # Check if volume exists
     volume = await VolumeInspect.by_name(client, name)
@@ -106,7 +108,7 @@ async def restore_volume(
 
 @router.post("/container/{name}")
 async def restore_container(
-    name: str, response: Response, client: Client
+    name: str, response: Response, client: DockerClient
 ) -> ContainerRestore | None:
     settings = Settings()
 

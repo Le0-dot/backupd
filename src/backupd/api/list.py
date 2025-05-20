@@ -5,7 +5,7 @@ from typing import Self
 from fastapi import APIRouter, Response
 from pydantic import BaseModel, TypeAdapter
 
-from backupd.docker import Client, ContainerInspect, VolumeInspect, run_container
+from backupd.docker import DockerClient, ContainerInspect, VolumeInspect, run_container
 from backupd.restic.flags import GroupFlag, TagFlag
 from backupd.restic.snapshots import Snapshot, SnapshotGroupping, snapshots
 
@@ -25,14 +25,14 @@ class ContainerModel(BaseModel):
     volumes: list[str]
 
     @classmethod
-    async def from_inspect(cls, client: Client, inspect: ContainerInspect) -> Self:
+    async def from_inspect(cls, client: DockerClient, inspect: ContainerInspect) -> Self:
         volumes = await inspect.volumes(client)
         names = [volume.Name for volume in volumes]
         return cls(name=inspect.name, volumes=names)
 
 
 @router.get("/volume")
-async def list_all_volumes(client: Client) -> list[VolumeModel]:
+async def list_all_volumes(client: DockerClient) -> list[VolumeModel]:
     volumes = await VolumeInspect.all(client)
     named = filter(lambda v: not v.anonymous, volumes)
     names = map(VolumeModel.from_inspect, named)
@@ -41,7 +41,7 @@ async def list_all_volumes(client: Client) -> list[VolumeModel]:
 
 @router.get("/volume/{name}")
 async def list_volume(
-    name: str, response: Response, client: Client
+    name: str, response: Response, client: DockerClient
 ) -> VolumeModel | None:
     volume = await VolumeInspect.by_name(client, name)
 
@@ -53,7 +53,7 @@ async def list_volume(
 
 
 @router.get("/container")
-async def list_all_containers(client: Client) -> list[ContainerModel]:
+async def list_all_containers(client: DockerClient) -> list[ContainerModel]:
     containers = await ContainerInspect.all(client)
     models = [
         await ContainerModel.from_inspect(client, container) for container in containers
@@ -63,7 +63,7 @@ async def list_all_containers(client: Client) -> list[ContainerModel]:
 
 @router.get("/container/{name}")
 async def list_container(
-    name: str, response: Response, client: Client
+    name: str, response: Response, client: DockerClient
 ) -> ContainerModel | None:
     container = await ContainerInspect.by_name(client, name)
 
@@ -76,7 +76,7 @@ async def list_container(
 
 @router.get("/snapshot")
 async def list_all_snapshots(
-    response: Response, client: Client
+    response: Response, client: DockerClient
 ) -> list[SnapshotGroupping] | None:
     configuration = snapshots([], GroupFlag.tags())
     logging.debug("retrieving snapshots", extra={"cmd": configuration.Cmd})
@@ -100,7 +100,7 @@ async def list_all_snapshots(
 
 @router.get("/snapshot/volume/{name}")
 async def list_snapshots_for_volume(
-    name: str, response: Response, client: Client
+    name: str, response: Response, client: DockerClient
 ) -> list[Snapshot] | None:
     configuration = snapshots([TagFlag.for_volume(name)], GroupFlag())
     logging.debug("retrieving snapshots", extra={"cmd": configuration.Cmd})
@@ -124,7 +124,7 @@ async def list_snapshots_for_volume(
 
 @router.get("/snapshot/container/{name}")
 async def list_snapshots_for_container(
-    name: str, response: Response, client: Client
+    name: str, response: Response, client: DockerClient
 ) -> list[SnapshotGroupping] | None:
     container = await ContainerInspect.by_name(client, name)
     if container is None:
