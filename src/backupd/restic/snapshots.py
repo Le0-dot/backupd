@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 
@@ -40,7 +41,7 @@ class SnapshotGroupping(BaseModel):
     snapshots: list[Snapshot]
 
 
-def snapshots(tags: list[TagFlag], groupping: GroupFlag) -> ContainerCreate:
+def snapshots(tags: Iterable[TagFlag], groupping: GroupFlag) -> ContainerCreate:
     settings = Settings()
     repository = RepositorySettings()
 

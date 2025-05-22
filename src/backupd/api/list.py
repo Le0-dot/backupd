@@ -1,77 +1,48 @@
 from http import HTTPStatus
 import logging
-from typing import Self
 
 from fastapi import APIRouter, Response
-from pydantic import BaseModel, TypeAdapter
+from pydantic import TypeAdapter
 
-from backupd.docker import DockerClient, ContainerInspect, VolumeInspect, run_container
+from backupd.docker import DockerClient, run_container
 from backupd.restic.flags import GroupFlag, TagFlag
 from backupd.restic.snapshots import Snapshot, SnapshotGroupping, snapshots
 
 router = APIRouter(prefix="/list")
 
 
-class VolumeModel(BaseModel):
-    name: str
-
-    @classmethod
-    def from_inspect(cls, inspect: VolumeInspect) -> Self:
-        return cls(name=inspect.Name)
-
-
-class ContainerModel(BaseModel):
-    name: str
-    volumes: list[str]
-
-    @classmethod
-    async def from_inspect(cls, client: DockerClient, inspect: ContainerInspect) -> Self:
-        volumes = await inspect.volumes(client)
-        names = [volume.Name for volume in volumes]
-        return cls(name=inspect.name, volumes=names)
-
-
 @router.get("/volume")
-async def list_all_volumes(client: DockerClient) -> list[VolumeModel]:
-    volumes = await VolumeInspect.all(client)
-    named = filter(lambda v: not v.anonymous, volumes)
-    names = map(VolumeModel.from_inspect, named)
-    return list(names)
+async def list_all_volumes(client: DockerClient) -> list[str]:
+    return await client.volumes()
 
 
 @router.get("/volume/{name}")
 async def list_volume(
     name: str, response: Response, client: DockerClient
-) -> VolumeModel | None:
-    volume = await VolumeInspect.by_name(client, name)
+) -> str | None:
+    if await client.volume_exists(name):
+        return name
 
-    if volume is None:
-        response.status_code = HTTPStatus.NOT_FOUND
-        return None
-
-    return VolumeModel.from_inspect(volume)
+    response.status_code = HTTPStatus.NOT_FOUND
+    return None
 
 
 @router.get("/container")
-async def list_all_containers(client: DockerClient) -> list[ContainerModel]:
-    containers = await ContainerInspect.all(client)
-    models = [
-        await ContainerModel.from_inspect(client, container) for container in containers
-    ]
+async def list_all_containers(client: DockerClient) -> dict[str, list[str]]:
+    containers = await client.containers()
+    models = {name: await client.volumes_from(name) or [] for name in containers}
     return models
 
 
 @router.get("/container/{name}")
 async def list_container(
     name: str, response: Response, client: DockerClient
-) -> ContainerModel | None:
-    container = await ContainerInspect.by_name(client, name)
+) -> dict[str, list[str]] | None:
+    if (volumes := await client.volumes_from(name)) is not None:
+        return {name: volumes}
 
-    if container is None:
-        response.status_code = HTTPStatus.NOT_FOUND
-        return None
-
-    return await ContainerModel.from_inspect(client, container)
+    response.status_code = HTTPStatus.NOT_FOUND
+    return None
 
 
 @router.get("/snapshot")
@@ -81,7 +52,7 @@ async def list_all_snapshots(
     configuration = snapshots([], GroupFlag.tags())
     logging.debug("retrieving snapshots", extra={"cmd": configuration.Cmd})
 
-    result = await run_container(client, configuration, "backupd-retrieve")
+    result = await run_container(client.docker, configuration, "backupd-retrieve")
 
     status = ["failure", "success"][result.success]
     level = [logging.ERROR, logging.INFO][result.success]
@@ -105,7 +76,7 @@ async def list_snapshots_for_volume(
     configuration = snapshots([TagFlag.for_volume(name)], GroupFlag())
     logging.debug("retrieving snapshots", extra={"cmd": configuration.Cmd})
 
-    result = await run_container(client, configuration, "backupd-retrieve")
+    result = await run_container(client.docker, configuration, "backupd-retrieve")
 
     status = ["failure", "success"][result.success]
     level = [logging.ERROR, logging.INFO][result.success]
@@ -126,17 +97,16 @@ async def list_snapshots_for_volume(
 async def list_snapshots_for_container(
     name: str, response: Response, client: DockerClient
 ) -> list[SnapshotGroupping] | None:
-    container = await ContainerInspect.by_name(client, name)
-    if container is None:
+    volumes = await client.volumes_from(name)
+    if volumes is None:
         response.status_code = HTTPStatus.NOT_FOUND
         return None
 
-    volumes = await container.volumes(client)
-    tags = [TagFlag.for_volume(volume.Name) for volume in volumes]
+    tags = map(TagFlag.for_volume, volumes)
     configuration = snapshots(tags, GroupFlag.tags())
     logging.debug("retrieving snapshots", extra={"cmd": configuration.Cmd})
 
-    result = await run_container(client, configuration, "backupd-retrieve")
+    result = await run_container(client.docker, configuration, "backupd-retrieve")
 
     status = ["failure", "success"][result.success]
     level = [logging.ERROR, logging.INFO][result.success]

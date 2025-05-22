@@ -170,49 +170,6 @@ class ContainerWait(BaseModel):
     StatusCode: int
 
 
-class MountPoint(BaseModel):
-    Type: Literal["bind", "volume", "image", "tmpfs", "npipe", "cluster"]
-    Name: str | None = None
-    Destination: str
-
-
-class ContainerInspect(BaseModel):
-    """
-    https://docs.docker.com/reference/api/engine/version/v1.49/#tag/Container/operation/ContainerInspect
-    """
-
-    Id: str
-    Name: str
-    Mounts: list[MountPoint]
-
-    @property
-    def name(self) -> str:
-        return self.Name.removeprefix("/")
-
-    async def volumes(self, client: Client) -> Iterable[VolumeInspect]:
-        volumes = filter(lambda m: m.Type == "volume", self.Mounts)
-        names = filter(None, map(lambda m: m.Name, volumes))
-        inspect = [await VolumeInspect.by_name(client, name) for name in names]
-        filtered = filter(None, inspect)
-        return filter(lambda v: not v.anonymous, filtered)
-
-    @classmethod
-    async def all(cls, client: Docker) -> list[Self]:
-        containers = await client.containers.list()
-        raw = [await container.show() for container in containers]
-        return [cls.model_validate(item) for item in raw]
-
-    @classmethod
-    async def by_name(cls, client: Docker, name: str) -> Self | None:
-        try:
-            container = await client.containers.get(name)
-        except DockerError:
-            return None
-
-        raw = await container.show()
-        return cls.model_validate(raw)
-
-
 class ContainerRunResult(NamedTuple):
     success: bool
     stdout: str
