@@ -1,89 +1,33 @@
 import asyncio
 from collections.abc import Awaitable, Callable, Iterable
 from itertools import filterfalse
-from typing import Annotated, Literal, NamedTuple, Self
+from typing import Annotated, NamedTuple
 
 from aiodocker import Docker, DockerError
-from aiodocker.docker import DockerContainer, DockerVolume
 from fastapi import Depends
-from pydantic import BaseModel, Field
 
+from backupd.docker.models import (
+    Container,
+    ContainerCreate,
+    ContainerWait,
+    HostConfig,
+    Mount,
+    Volume,
+    VolumeList,
+)
 from backupd.settings import Settings
 
 
 async def asyncmap[T, U](
     func: Callable[[T], Awaitable[U]], values: Iterable[T]
-) -> Iterable[U]:
+) -> list[U]:
     return [await func(value) for value in values]
 
 
-class Volume(BaseModel):
-    Name: str
-    Driver: str
-    Labels: dict[str, str] | None = None
-
-    @classmethod
-    async def from_wrapped(cls, wrapper: DockerVolume) -> Self:
-        raw = await wrapper.show()
-        return cls.model_validate(raw)
-
-    def is_anonymous(self) -> bool:
-        return "com.docker.volume.anonymous" in (self.Labels or {})
-
-
-class VolumeList(BaseModel):
-    Volumes: list[Volume]
-    Warnings: list[str] | None = None
-
-
-class VolumeMountPoint(BaseModel):
-    Type: Literal["volume"]
-    Name: str
-
-
-class OtherMountPoint(BaseModel):
-    Type: Literal["bind", "image", "tmpfs", "npipe", "cluster"]
-
-
-class Container(BaseModel):
-    Id: str
-    Name: str
-    Mounts: list[
-        Annotated[VolumeMountPoint | OtherMountPoint, Field(discriminator="Type")]
-    ]
-
-    @classmethod
-    async def from_wrapped(cls, wrapper: DockerContainer) -> Self:
-        raw = await wrapper.show()
-        return cls.model_validate(raw)
-
-    def volumes(self) -> Iterable[str]:
-        for mount in self.Mounts:
-            if isinstance(mount, VolumeMountPoint):
-                yield mount.Name
-
-
-class Mount(BaseModel):
-    Target: str
-    Source: str
-    Type: Literal["bind", "volume", "tmpfs", "npipe", "cluster"]
-    ReadOnly: bool
-
-
-class HostConfig(BaseModel):
-    Mounts: list[Mount] | None
-
-
-class ContainerCreate(BaseModel):
-    """
-    https://docs.docker.com/reference/api/engine/version/v1.49/#tag/Container/operation/ContainerCreate
-    """
-
-    Image: str
-    Entrypoint: str | None
-    Cmd: list[str] | None
-    Env: list[str] | None
-    HostConfig: HostConfig | None
+class ContainerRunResult(NamedTuple):
+    success: bool
+    stdout: str
+    stderr: str
 
 
 class ContainerCreator:
@@ -91,16 +35,28 @@ class ContainerCreator:
         self.docker: Docker = docker
         self.configuration: ContainerCreate = configuration
 
-    async def run_and_wait(self) -> ...:  # TODO
-        pass
+    async def run_and_wait(self, name: str) -> ContainerRunResult:
+        container = await self.docker.containers.run(
+            self.configuration.model_dump(exclude_none=True), name=name
+        )
 
+        settings = Settings()
+        try:
+            result_json = await asyncio.wait_for(
+                container.wait(), timeout=settings.timeout_seconds
+            )
+            result = ContainerWait.model_validate(result_json)
+            success = result.StatusCode == 0
+        except asyncio.TimeoutError:
+            success = False
+            await container.stop()
 
-class ContainerWait(BaseModel):
-    """
-    https://docs.docker.com/reference/api/engine/version/v1.49/#tag/Container/operation/ContainerWait
-    """
+        stdout = await container.log(stdout=True)
+        stderr = await container.log(stderr=True)
 
-    StatusCode: int
+        await container.delete()
+
+        return ContainerRunResult(success, "".join(stdout), "".join(stderr))
 
 
 class Client:
@@ -155,7 +111,7 @@ class Client:
         names = map(lambda container: container.Name, models)
         return [name.removeprefix("/") for name in names]
 
-    def create(
+    def configure(
         self,
         *,
         image: str,
@@ -192,35 +148,3 @@ async def make_client():
 
 
 DockerClient = Annotated[Client, Depends(make_client)]
-
-
-class ContainerRunResult(NamedTuple):
-    success: bool
-    stdout: str
-    stderr: str
-
-
-async def run_container(
-    client: Docker,
-    config: ContainerCreate,
-    name: str,
-) -> ContainerRunResult:
-    container = await client.containers.run(config.model_dump(), name=name)
-
-    settings = Settings()
-    try:
-        result_json = await asyncio.wait_for(
-            container.wait(), timeout=settings.timeout_seconds
-        )
-        result = ContainerWait.model_validate(result_json)
-        success = result.StatusCode == 0
-    except asyncio.TimeoutError:
-        success = False
-        await container.stop()
-
-    stdout = await container.log(stdout=True)
-    stderr = await container.log(stderr=True)
-
-    await container.delete()
-
-    return ContainerRunResult(success, "".join(stdout), "".join(stderr))
