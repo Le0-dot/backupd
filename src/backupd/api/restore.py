@@ -5,12 +5,7 @@ from typing import Literal, cast
 from fastapi import APIRouter, Response
 from pydantic import TypeAdapter
 
-from backupd.docker import (
-    DockerClient,
-    ContainerInspect,
-    VolumeInspect,
-    run_container,
-)
+from backupd.docker import DockerClient, run_container
 from backupd.metrics import restore_result
 from backupd.restic.common import parse_messages
 from backupd.restic.restore import RestoreMessage, restore
@@ -29,7 +24,7 @@ async def run_restore(
     logging.debug("staring volume restoreation", extra={"volume": volume})
 
     configuration = restore(volume, snapshot_id)
-    result = await run_container(client, configuration, "backupd-restore")
+    result = await run_container(client.docker, configuration, "backupd-restore")
 
     messages = parse_messages(
         cast(type[RestoreMessage], RestoreMessage), result.stdout, result.stderr
@@ -58,9 +53,7 @@ async def restore_latest_volume(
     name: str, response: Response, client: DockerClient
 ) -> VolumeRestore | None:
     # Check if volume exists
-    volume = await VolumeInspect.by_name(client, name)
-
-    if volume is None:
+    if not await client.volume_exists(name):
         response.status_code = HTTPStatus.NOT_FOUND
         return None
 
@@ -78,15 +71,13 @@ async def restore_volume(
     name: str, snapshot_id: str, response: Response, client: DockerClient
 ) -> VolumeRestore | None:
     # Check if volume exists
-    volume = await VolumeInspect.by_name(client, name)
-
-    if volume is None:
+    if not await client.volume_exists(name):
         response.status_code = HTTPStatus.NOT_FOUND
         return None
 
     # Check if snapshot exists and is for the volume
     configuration = snapshot_by_id(snapshot_id)
-    result = await run_container(client, configuration, "backupd-retrieve")
+    result = await run_container(client.docker, configuration, "backupd-retrieve")
 
     if not result.success:
         response.status_code = HTTPStatus.NOT_FOUND
@@ -112,19 +103,18 @@ async def restore_container(
 ) -> ContainerRestore | None:
     settings = Settings()
 
-    container = await ContainerInspect.by_name(client, name)
+    volumes = await client.volumes_from(name)
 
-    if container is None:
+    if volumes is None:
         response.status_code = HTTPStatus.NOT_FOUND
         return None
 
     messages: dict[str, VolumeRestore] = {}
 
-    volumes = await container.volumes(client)
     for volume in volumes:
-        success, restore_messages = await run_restore(client, volume.Name, "latest")
+        success, restore_messages = await run_restore(client, volume, "latest")
 
-        messages[volume.Name] = restore_messages
+        messages[volume] = restore_messages
 
         if not success:
             response.status_code = HTTPStatus.FAILED_DEPENDENCY
