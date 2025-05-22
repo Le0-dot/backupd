@@ -5,7 +5,7 @@ from typing import cast
 
 from fastapi import APIRouter, Response
 
-from backupd.docker import DockerClient, ContainerInspect, VolumeInspect, run_container
+from backupd.docker import DockerClient, run_container
 from backupd.metrics import backup_duration, backup_result
 from backupd.restic.backup import BackupMessage, BackupSummary, backup
 from backupd.restic.common import parse_messages
@@ -22,7 +22,7 @@ async def run_backup(client: DockerClient, volume: str) -> tuple[bool, VolumeBac
     logging.debug("starting volume backup", extra={"volume": volume})
 
     configuration = backup(volume)
-    result = await run_container(client, configuration, "backupd-backup")
+    result = await run_container(client.docker, configuration, "backupd-backup")
 
     messages = parse_messages(
         cast(type[BackupMessage], BackupMessage), result.stdout, result.stderr
@@ -76,10 +76,10 @@ async def run_bulk_backup(
 async def backup_all_volumes(response: Response, client: DockerClient) -> BulkBackup:
     settings = Settings()
 
-    volumes = await VolumeInspect.all(client)
-    named = filter(lambda v: not v.anonymous, volumes)
-    names = map(lambda v: v.Name, named)
-    success, messages = await run_bulk_backup(client, names, settings.abort_on_failure)
+    volumes = await client.volumes()
+    success, messages = await run_bulk_backup(
+        client, volumes, settings.abort_on_failure
+    )
 
     if not success:
         response.status_code = HTTPStatus.FAILED_DEPENDENCY
@@ -91,9 +91,7 @@ async def backup_all_volumes(response: Response, client: DockerClient) -> BulkBa
 async def backup_volume(
     name: str, response: Response, client: DockerClient
 ) -> VolumeBackup | None:
-    volume = await VolumeInspect.by_name(client, name)
-
-    if volume is None:
+    if not await client.volume_exists(name):
         response.status_code = HTTPStatus.NOT_FOUND
         return None
 
@@ -111,17 +109,18 @@ async def backup_all_conatiner(
 ) -> ConatinersBackup:
     settings = Settings()
 
-    containers = await ContainerInspect.all(client)
+    containers = await client.containers()
 
     messages: ConatinersBackup = {}
     for container in containers:
-        volumes = await container.volumes(client)
-        names = [volume.Name for volume in volumes]
+        volumes = await client.volumes_from(container)
+        assert volumes is not None
+
         success, backup_messages = await run_bulk_backup(
-            client, names, settings.abort_on_failure
+            client, volumes, settings.abort_on_failure
         )
 
-        messages[container.name] = backup_messages
+        messages[container] = backup_messages
 
         if not success:
             response.status_code = HTTPStatus.FAILED_DEPENDENCY
@@ -138,14 +137,14 @@ async def backup_container(
 ) -> BulkBackup | None:
     settings = Settings()
 
-    container = await ContainerInspect.by_name(client, name)
-    if container is None:
+    volumes = await client.volumes_from(name)
+    if volumes is None:
         response.status_code = HTTPStatus.NOT_FOUND
         return None
 
-    volumes = await container.volumes(client)
-    names = [volume.Name for volume in volumes]
-    success, messages = await run_bulk_backup(client, names, settings.abort_on_failure)
+    success, messages = await run_bulk_backup(
+        client, volumes, settings.abort_on_failure
+    )
 
     if not success:
         response.status_code = HTTPStatus.FAILED_DEPENDENCY
