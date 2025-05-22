@@ -63,6 +63,46 @@ class Container(BaseModel):
                 yield mount.Name
 
 
+class Mount(BaseModel):
+    Target: str
+    Source: str
+    Type: Literal["bind", "volume", "tmpfs", "npipe", "cluster"]
+    ReadOnly: bool
+
+
+class HostConfig(BaseModel):
+    Mounts: list[Mount] | None
+
+
+class ContainerCreate(BaseModel):
+    """
+    https://docs.docker.com/reference/api/engine/version/v1.49/#tag/Container/operation/ContainerCreate
+    """
+
+    Image: str
+    Entrypoint: str | None
+    Cmd: list[str] | None
+    Env: list[str] | None
+    HostConfig: HostConfig | None
+
+
+class ContainerCreator:
+    def __init__(self, docker: Docker, configuration: ContainerCreate) -> None:
+        self.docker: Docker = docker
+        self.configuration: ContainerCreate = configuration
+
+    async def run_and_wait(self) -> ...:  # TODO
+        pass
+
+
+class ContainerWait(BaseModel):
+    """
+    https://docs.docker.com/reference/api/engine/version/v1.49/#tag/Container/operation/ContainerWait
+    """
+
+    StatusCode: int
+
+
 class Client:
     def __init__(self, docker: Docker | None = None) -> None:
         self.docker: Docker = docker or Docker()
@@ -115,6 +155,33 @@ class Client:
         names = map(lambda container: container.Name, models)
         return [name.removeprefix("/") for name in names]
 
+    def create(
+        self,
+        *,
+        image: str,
+        entrypoint: str | None = None,
+        cmd: list[str] | None = None,
+        env: list[str] | None = None,
+        volumes: dict[str, str] | None = None,
+        binds: dict[str, str] | None = None,
+    ) -> ContainerCreator:
+        volume_mounts = [
+            Mount(Source=volume, Target=container_path, Type="volume", ReadOnly=False)
+            for volume, container_path in (volumes or {}).items()
+        ]
+        bind_mounts = [
+            Mount(Source=host_path, Target=container_path, Type="bind", ReadOnly=False)
+            for host_path, container_path in (binds or {}).items()
+        ]
+        configuration = ContainerCreate(
+            Image=image,
+            Entrypoint=entrypoint,
+            Cmd=cmd,
+            Env=env,
+            HostConfig=HostConfig(Mounts=volume_mounts + bind_mounts),
+        )
+        return ContainerCreator(self.docker, configuration)
+
 
 async def make_client():
     client = Client()
@@ -125,49 +192,6 @@ async def make_client():
 
 
 DockerClient = Annotated[Client, Depends(make_client)]
-
-
-class Mount(BaseModel):
-    Target: str
-    Source: str
-    Type: Literal["bind", "volume", "tmpfs", "npipe", "cluster"]
-    ReadOnly: bool
-
-
-class HostConfig(BaseModel):
-    Mounts: list[Mount]
-
-
-class ContainerCreate(BaseModel):
-    """
-    https://docs.docker.com/reference/api/engine/version/v1.49/#tag/Container/operation/ContainerCreate
-    """
-
-    Image: str
-    Entrypoint: str
-    Cmd: list[str]
-    Env: list[str]
-    HostConfig: HostConfig
-
-    @classmethod
-    def shell(
-        cls, *, image: str, cmd: str, env: list[str], mounts: list[Mount | None]
-    ) -> Self:
-        return cls(
-            Image=image,
-            Entrypoint="sh",
-            Cmd=["-c", cmd],
-            Env=env,
-            HostConfig=HostConfig(Mounts=list(filter(None, mounts))),
-        )
-
-
-class ContainerWait(BaseModel):
-    """
-    https://docs.docker.com/reference/api/engine/version/v1.49/#tag/Container/operation/ContainerWait
-    """
-
-    StatusCode: int
 
 
 class ContainerRunResult(NamedTuple):
