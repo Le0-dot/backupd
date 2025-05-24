@@ -1,7 +1,9 @@
-restic_env = RESTIC_REPOSITORY=$(shell pwd)/test-backup RESTIC_PASSWORD=123 RESTIC_HOST=backupd
+restic_repo = $(shell pwd)/test-backup
+restic_env = RESTIC_REPOSITORY=$(restic_repo) RESTIC_PASSWORD=123 RESTIC_HOST=backupd
 
 repo:
 	$(restic_env) restic init
+	echo "*" > $(restic_repo)/.gitignore
 snapshots:
 	$(restic_env) restic --json snapshots --group-by tags
 backup:
