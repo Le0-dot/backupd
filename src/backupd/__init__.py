@@ -10,7 +10,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from backupd.api.backup import router as backup_router
 from backupd.api.list import router as list_router
-# from backupd.api.restore import router as restore_router
+from backupd.api.restore import router as restore_router
 from backupd.metrics import api_calls
 from backupd.settings import RepositorySettings, Settings
 
@@ -83,7 +83,7 @@ app = FastAPI(lifespan=lifespan)
 
 app.include_router(list_router)
 app.include_router(backup_router)
-# app.include_router(restore_router)
+app.include_router(restore_router)
 
 app.add_middleware(APIMetricsMiddleware)
 app.add_middleware(LoggingMiddleware)

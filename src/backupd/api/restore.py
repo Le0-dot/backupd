@@ -1,16 +1,22 @@
 import logging
 from http import HTTPStatus
+from pathlib import Path
 from typing import Literal, cast
 
 from fastapi import APIRouter, Response
 from pydantic import TypeAdapter
 
-from backupd.docker import DockerClient, run_container
+from backupd.docker.interface import (
+    DockerClient,
+    configure_container,
+    start_and_wait,
+    volume_exists,
+    volumes_from,
+)
 from backupd.metrics import restore_result
-from backupd.restic.common import parse_messages
-from backupd.restic.restore import RestoreMessage, restore
-from backupd.restic.snapshots import Snapshot, snapshot_by_id
-from backupd.settings import Settings
+from backupd.restic.commands import restore, snapshots
+from backupd.restic.models import RestoreMessage, Snapshot, parse_messages
+from backupd.settings import RepositorySettings, Settings
 
 router = APIRouter(prefix="/restore")
 
@@ -23,8 +29,24 @@ async def run_restore(
 ) -> tuple[bool, VolumeRestore]:
     logging.debug("staring volume restoreation", extra={"volume": volume})
 
-    configuration = restore(volume, snapshot_id)
-    result = await run_container(client.docker, configuration, "backupd-restore")
+    settings = Settings()
+    repository = RepositorySettings()
+    mountpoint = Path("/data")
+    cmd = restore(volume=volume, mountpoint=mountpoint, snapshot_id=snapshot_id)
+    config = await configure_container(
+        client,
+        image=settings.runner_image,
+        entrypoint=settings.runner_entrypoint,
+        cmd=cmd,
+        env=repository.env,
+        volumes={volume: mountpoint},
+        binds=None
+        if repository.restic.backend != "local"
+        else {Path(repository.restic.location): Path(repository.restic.location)},
+    )
+    result = await start_and_wait(
+        client, name="backupd-restore", config=config, timeout=settings.timeout_seconds
+    )
 
     messages = parse_messages(
         cast(type[RestoreMessage], RestoreMessage), result.stdout, result.stderr
@@ -52,12 +74,10 @@ async def run_restore(
 async def restore_latest_volume(
     name: str, response: Response, client: DockerClient
 ) -> VolumeRestore | None:
-    # Check if volume exists
-    if not await client.volume_exists(name):
+    if not await volume_exists(client, name):
         response.status_code = HTTPStatus.NOT_FOUND
         return None
 
-    # Run restoration process
     success, messages = await run_restore(client, name, "latest")
 
     if not success:
@@ -70,14 +90,26 @@ async def restore_latest_volume(
 async def restore_volume(
     name: str, snapshot_id: str, response: Response, client: DockerClient
 ) -> VolumeRestore | None:
-    # Check if volume exists
-    if not await client.volume_exists(name):
+    if not await volume_exists(client, name):
         response.status_code = HTTPStatus.NOT_FOUND
         return None
 
-    # Check if snapshot exists and is for the volume
-    configuration = snapshot_by_id(snapshot_id)
-    result = await run_container(client.docker, configuration, "backupd-retrieve")
+    settings = Settings()
+    repository = RepositorySettings()
+    cmd = snapshots(snapshot_id=snapshot_id)
+    config = await configure_container(
+        client,
+        image=settings.runner_image,
+        entrypoint=settings.runner_entrypoint,
+        cmd=cmd,
+        env=repository.env,
+        binds=None
+        if repository.restic.backend != "local"
+        else {Path(repository.restic.location): Path(repository.restic.location)},
+    )
+    result = await start_and_wait(
+        client, name="backupd-retrieve", config=config, timeout=settings.timeout_seconds
+    )
 
     if not result.success:
         response.status_code = HTTPStatus.NOT_FOUND
@@ -103,7 +135,7 @@ async def restore_container(
 ) -> ContainerRestore | None:
     settings = Settings()
 
-    volumes = await client.volumes_from(name)
+    volumes = await volumes_from(client, name)
 
     if volumes is None:
         response.status_code = HTTPStatus.NOT_FOUND
