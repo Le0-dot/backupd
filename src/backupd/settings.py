@@ -4,7 +4,7 @@ from functools import cached_property
 from itertools import starmap
 from typing import ClassVar, Self, cast, override
 
-from pydantic import BaseModel, RootModel, model_validator
+from pydantic import BaseModel, RootModel, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -49,15 +49,18 @@ class Restic(BaseModel):
 
     @property
     def backend(self) -> str:
-        if len(split := self.repository.split(":")) == 1:
-            return "local"
-        return split[0]
+        return self.repository.split(":", maxsplit=1)[0]
 
     @property
-    def location(self) -> list[str]:
-        if len(split := self.repository.split(":")) == 1:
-            return split
-        return split[1:]
+    def location(self) -> str:
+        return self.repository.split(":", maxsplit=1)[1]
+
+    @field_validator("repository", mode="after")
+    @classmethod
+    def normalize_repository(cls, repository: str) -> str:
+        if len(repository.split(":", maxsplit=1)) == 1:
+            return f"local:{repository}"
+        return repository
 
     @model_validator(mode="after")
     def validate_backend(self) -> Self:
@@ -96,7 +99,7 @@ class RepositorySettings(BaseSettings):
                 f"no rclone configuration for {self.restic.repository} repository"
             )
 
-        remote, _path = self.restic.location
+        remote, _path = self.restic.location.split(":")
         if not self.rclone.has_remote(remote):
             raise ValueError(f"rclone has no definition of {remote} remote")
 
