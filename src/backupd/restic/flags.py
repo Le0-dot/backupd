@@ -1,4 +1,3 @@
-from collections.abc import Set
 from dataclasses import dataclass, field
 from typing import Literal, Self, override
 
@@ -19,20 +18,25 @@ class Tag(str):
         return None
 
 
-class TagFlag(set[Tag]):
+@dataclass
+class TagFlag:
     """
     Represents individual `--tag` flag for the restic
     """
 
-    @override
-    def __or__(self, value: Set[Tag], /) -> "TagFlag":
-        return TagFlag(super().__or__(value))
+    tags: set[Tag] = field(default_factory=set)
+
+    def __or__(self, value: Self, /) -> Self:
+        return self.__class__(self.tags | value.tags)
 
     @override
     def __str__(self) -> str:
         if self:
-            return f"--tag {','.join(self)}"
+            return f"--tag {','.join(self.tags)}"
         return ""
+
+    def __bool__(self) -> bool:
+        return bool(self.tags)
 
     @classmethod
     def for_app(cls) -> Self:
@@ -56,6 +60,9 @@ class GroupFlag:
         if self.groups:
             return f"--group-by {','.join(self.groups)}"
         return ""
+
+    def __bool__(self) -> bool:
+        return bool(self.groups)
 
     @classmethod
     def host(cls) -> Self:
