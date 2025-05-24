@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import Awaitable, Callable, Iterable
 from itertools import filterfalse
+from pathlib import Path
 from typing import Annotated, NamedTuple
 
 from aiodocker import Docker, DockerError
@@ -90,16 +91,21 @@ async def configure_container(
     entrypoint: str | None = None,
     cmd: list[str] | None = None,
     env: list[str] | None = None,
-    volumes: dict[str, str] | None = None,
-    binds: dict[str, str] | None = None,
+    volumes: dict[str, Path] | None = None,
+    binds: dict[Path, Path] | None = None,
 ) -> ContainerCreate:
     # TODO: Validate volumes
     volume_mounts = [
-        Mount(Source=volume, Target=container_path, Type="volume", ReadOnly=False)
+        Mount(Source=volume, Target=str(container_path), Type="volume", ReadOnly=False)
         for volume, container_path in (volumes or {}).items()
     ]
     bind_mounts = [
-        Mount(Source=host_path, Target=container_path, Type="bind", ReadOnly=False)
+        Mount(
+            Source=str(host_path),
+            Target=str(container_path),
+            Type="bind",
+            ReadOnly=False,
+        )
         for host_path, container_path in (binds or {}).items()
     ]
     return ContainerCreate(
