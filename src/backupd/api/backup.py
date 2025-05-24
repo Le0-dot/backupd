@@ -46,39 +46,32 @@ async def run_backup(client: DockerClient, volume: str) -> tuple[bool, VolumeBac
         if repository.restic.backend != "local"
         else {Path(repository.restic.location): Path(repository.restic.location)},
     )
-    result = await start_and_wait(
+    success, logs = await start_and_wait(
         client, name="backupd-backup", config=config, timeout=settings.timeout_seconds
     )
 
-    messages = parse_messages(
-        cast(type[BackupMessage], BackupMessage), result.stdout, result.stderr
-    )
+    messages = parse_messages(cast(type[BackupMessage], BackupMessage), logs)
 
-    status = ["failure", "success"][result.success]
+    status = ["failure", "success"][success]
     backup_result.labels(volume, status).inc()
 
     extra: dict[str, float] = {}
-    if result.success:
+    if success:
         summary = next(filter(lambda m: isinstance(m, BackupSummary), messages))
         summary = cast(BackupSummary, summary)
         backup_duration.labels(volume).observe(summary.total_duration)
         extra["duration"] = summary.total_duration
 
-    level = [logging.ERROR, logging.INFO][result.success]
+    level = [logging.ERROR, logging.INFO][success]
     logging.log(
         level,
         "finished volume backup",
         extra={"volume": volume, "status": status} | extra,
     )
 
-    logging.debug(
-        result.stdout, extra={"volume": volume, "status": status, "stream": "stdout"}
-    )
-    logging.debug(
-        result.stderr, extra={"volume": volume, "status": status, "stream": "stderr"}
-    )
+    logging.debug(logs, extra={"volume": volume, "status": status})
 
-    return result.success, messages
+    return success, messages
 
 
 async def run_bulk_backup(

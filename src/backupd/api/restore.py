@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Literal, cast
 
 from fastapi import APIRouter, Response
-from pydantic import TypeAdapter
 
 from backupd.docker.interface import (
     DockerClient,
@@ -44,30 +43,22 @@ async def run_restore(
         if repository.restic.backend != "local"
         else {Path(repository.restic.location): Path(repository.restic.location)},
     )
-    result = await start_and_wait(
+    success, logs = await start_and_wait(
         client, name="backupd-restore", config=config, timeout=settings.timeout_seconds
     )
 
-    messages = parse_messages(
-        cast(type[RestoreMessage], RestoreMessage), result.stdout, result.stderr
-    )
+    messages = parse_messages(cast(type[RestoreMessage], RestoreMessage), logs)
 
-    status = ["failure", "success"][result.success]
+    status = ["failure", "success"][success]
     restore_result.labels(volume, status).inc()
 
-    level = [logging.ERROR, logging.INFO][result.success]
+    level = [logging.ERROR, logging.INFO][success]
     logging.log(
         level, "finished volume restoration", extra={"volume": volume, "status": status}
     )
+    logging.debug(logs, extra={"volume": volume, "status": status})
 
-    logging.debug(
-        result.stdout, extra={"volume": volume, "status": status, "stream": "stdout"}
-    )
-    logging.debug(
-        result.stderr, extra={"volume": volume, "status": status, "stream": "stderr"}
-    )
-
-    return result.success, messages
+    return success, messages
 
 
 @router.post("/volume/{name}")
@@ -107,20 +98,19 @@ async def restore_volume(
         if repository.restic.backend != "local"
         else {Path(repository.restic.location): Path(repository.restic.location)},
     )
-    result = await start_and_wait(
+    success, logs = await start_and_wait(
         client, name="backupd-retrieve", config=config, timeout=settings.timeout_seconds
     )
 
-    if not result.success:
+    if not success:
         response.status_code = HTTPStatus.NOT_FOUND
         return None
 
-    [snapshot] = TypeAdapter(list[Snapshot]).validate_json(result.stdout)
+    [[snapshot]] = parse_messages(list[Snapshot], logs)
     if not snapshot.is_for(name):
         response.status_code = HTTPStatus.BAD_REQUEST
         return None
 
-    # Run restoration process
     success, messages = await run_restore(client, name, snapshot_id)
 
     if not success:

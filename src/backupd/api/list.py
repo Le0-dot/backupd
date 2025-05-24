@@ -4,7 +4,6 @@ from pathlib import Path
 
 from aiodocker import Docker
 from fastapi import APIRouter, Response
-from pydantic import TypeAdapter
 
 from backupd.docker.interface import (
     DockerClient,
@@ -18,7 +17,7 @@ from backupd.docker.interface import (
 from backupd.docker.models import ContainerCreate
 from backupd.restic.commands import snapshots
 from backupd.restic.flags import GroupFlag, TagFlag
-from backupd.restic.models import Snapshot, SnapshotGroupping
+from backupd.restic.models import Snapshot, SnapshotGroupping, parse_messages
 from backupd.settings import RepositorySettings, Settings
 
 router = APIRouter(prefix="/list")
@@ -82,22 +81,21 @@ async def list_all_snapshots(
 
     settings = Settings()
     config = await configure_snapshots(client, cmd)
-    result = await start_and_wait(
+    success, logs = await start_and_wait(
         client, name="backupd-retrieve", config=config, timeout=settings.timeout_seconds
     )
 
-    status = ["failure", "success"][result.success]
-    level = [logging.ERROR, logging.INFO][result.success]
+    status = ["failure", "success"][success]
+    level = [logging.ERROR, logging.INFO][success]
 
     logging.log(level, "finished retrieving snapshots", extra={"status": status})
-    logging.debug(result.stdout, extra={"status": status, "stream": "stdout"})
-    logging.debug(result.stderr, extra={"status": status, "stream": "stderr"})
+    logging.debug(logs, extra={"status": status})
 
-    if not result.success:
+    if not success:
         response.status_code = HTTPStatus.FAILED_DEPENDENCY
         return None
 
-    model = TypeAdapter(list[SnapshotGroupping]).validate_json(result.stdout)
+    [model] = parse_messages(list[SnapshotGroupping], logs)
     return model
 
 
@@ -110,22 +108,21 @@ async def list_snapshots_for_volume(
 
     settings = Settings()
     config = await configure_snapshots(client, cmd)
-    result = await start_and_wait(
+    success, logs = await start_and_wait(
         client, name="backupd-retrieve", config=config, timeout=settings.timeout_seconds
     )
 
-    status = ["failure", "success"][result.success]
-    level = [logging.ERROR, logging.INFO][result.success]
+    status = ["failure", "success"][success]
+    level = [logging.ERROR, logging.INFO][success]
 
     logging.log(level, "finished retrieving snapshots", extra={"status": status})
-    logging.debug(result.stdout, extra={"status": status, "stream": "stdout"})
-    logging.debug(result.stderr, extra={"status": status, "stream": "stderr"})
+    logging.debug(logs, extra={"status": status})
 
-    if not result.success:
+    if not success:
         response.status_code = HTTPStatus.FAILED_DEPENDENCY
         return None
 
-    model = TypeAdapter(list[Snapshot]).validate_json(result.stdout)
+    [model] = parse_messages(list[Snapshot], logs)
     return model
 
 
@@ -143,20 +140,19 @@ async def list_snapshots_for_container(
 
     settings = Settings()
     config = await configure_snapshots(client, cmd)
-    result = await start_and_wait(
+    success, logs = await start_and_wait(
         client, name="backupd-retrieve", config=config, timeout=settings.timeout_seconds
     )
 
-    status = ["failure", "success"][result.success]
-    level = [logging.ERROR, logging.INFO][result.success]
+    status = ["failure", "success"][success]
+    level = [logging.ERROR, logging.INFO][success]
 
     logging.log(level, "finished retrieving snapshots", extra={"status": status})
-    logging.debug(result.stdout, extra={"status": status, "stream": "stdout"})
-    logging.debug(result.stderr, extra={"status": status, "stream": "stderr"})
+    logging.debug(logs, extra={"status": status})
 
-    if not result.success:
+    if not success:
         response.status_code = HTTPStatus.FAILED_DEPENDENCY
         return None
 
-    model = TypeAdapter(list[SnapshotGroupping]).validate_json(result.stdout)
+    [model] = parse_messages(list[SnapshotGroupping], logs)
     return model

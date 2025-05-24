@@ -117,15 +117,9 @@ async def configure_container(
     )
 
 
-class ContainerRunResult(NamedTuple):
-    success: bool
-    stdout: str
-    stderr: str
-
-
 async def start_and_wait(
     docker: Docker, /, *, name: str, config: ContainerCreate, timeout: float
-) -> ContainerRunResult:
+) -> tuple[bool, str]:
     container = await docker.containers.run(
         config.model_dump(exclude_none=True), name=name
     )
@@ -138,9 +132,8 @@ async def start_and_wait(
         success = False
         await container.stop()
 
-    stdout = await container.log(stdout=True)
-    stderr = await container.log(stderr=True)
+    logs = await container.log(stdout=True, stderr=True)
 
     await container.delete()
 
-    return ContainerRunResult(success, "".join(stdout), "".join(stderr))
+    return success, "".join(logs)

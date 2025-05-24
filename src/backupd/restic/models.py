@@ -1,6 +1,5 @@
 import logging
 from datetime import datetime
-from itertools import chain
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
@@ -191,12 +190,10 @@ RestoreMessage = Annotated[
 ### common
 
 
-def parse_messages[T](message_type: type[T], stdout: str, stderr: str) -> list[T]:
-    lines = chain(stdout.splitlines(), stderr.splitlines())
+def parse_messages[T](message_type: type[T], output: str) -> list[T]:
     adapter: TypeAdapter[T] = TypeAdapter(message_type)
-
     messages: list[T] = []
-    for line in lines:
+    for line in output.splitlines():
         try:
             messages.append(adapter.validate_json(line))
         except ValidationError as e:
