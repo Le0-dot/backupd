@@ -1,26 +1,54 @@
-from http import HTTPStatus
 import logging
+from http import HTTPStatus
+from pathlib import Path
 
+from aiodocker import Docker
 from fastapi import APIRouter, Response
 from pydantic import TypeAdapter
 
-from backupd.docker import DockerClient, run_container
+from backupd.docker.interface import (
+    DockerClient,
+    configure_container,
+    containers,
+    start_and_wait,
+    volume_exists,
+    volumes,
+    volumes_from,
+)
+from backupd.docker.models import ContainerCreate
+from backupd.restic.commands import snapshots
 from backupd.restic.flags import GroupFlag, TagFlag
-from backupd.restic.snapshots import Snapshot, SnapshotGroupping, snapshots
+from backupd.restic.models import Snapshot, SnapshotGroupping
+from backupd.settings import RepositorySettings, Settings
 
 router = APIRouter(prefix="/list")
 
 
+async def configure_snapshots(docker: Docker, cmd: list[str]) -> ContainerCreate:
+    settings = Settings()
+    repository = RepositorySettings()
+    return await configure_container(
+        docker,
+        image=settings.runner_image,
+        entrypoint=settings.runner_entrypoint,
+        cmd=cmd,
+        env=repository.env,
+        binds=None
+        if repository.restic.backend != "local"
+        else {Path(repository.restic.location): Path(repository.restic.location)},
+    )
+
+
 @router.get("/volume")
 async def list_all_volumes(client: DockerClient) -> list[str]:
-    return await client.volumes()
+    return await volumes(client)
 
 
 @router.get("/volume/{name}")
 async def list_volume(
     name: str, response: Response, client: DockerClient
 ) -> str | None:
-    if await client.volume_exists(name):
+    if await volume_exists(client, name):
         return name
 
     response.status_code = HTTPStatus.NOT_FOUND
@@ -29,8 +57,8 @@ async def list_volume(
 
 @router.get("/container")
 async def list_all_containers(client: DockerClient) -> dict[str, list[str]]:
-    containers = await client.containers()
-    models = {name: await client.volumes_from(name) or [] for name in containers}
+    container_list = await containers(client)
+    models = {name: await volumes_from(client, name) or [] for name in container_list}
     return models
 
 
@@ -38,7 +66,7 @@ async def list_all_containers(client: DockerClient) -> dict[str, list[str]]:
 async def list_container(
     name: str, response: Response, client: DockerClient
 ) -> dict[str, list[str]] | None:
-    if (volumes := await client.volumes_from(name)) is not None:
+    if (volumes := await volumes_from(client, name)) is not None:
         return {name: volumes}
 
     response.status_code = HTTPStatus.NOT_FOUND
@@ -49,10 +77,14 @@ async def list_container(
 async def list_all_snapshots(
     response: Response, client: DockerClient
 ) -> list[SnapshotGroupping] | None:
-    configuration = snapshots([], GroupFlag.tags())
-    logging.debug("retrieving snapshots", extra={"cmd": configuration.Cmd})
+    cmd = snapshots(groupping=GroupFlag.tags())
+    logging.debug("retrieving snapshots", extra={"cmd": " ".join(cmd)})
 
-    result = await run_container(client.docker, configuration, "backupd-retrieve")
+    settings = Settings()
+    config = await configure_snapshots(client, cmd)
+    result = await start_and_wait(
+        client, name="backupd-retrieve", config=config, timeout=settings.timeout_seconds
+    )
 
     status = ["failure", "success"][result.success]
     level = [logging.ERROR, logging.INFO][result.success]
@@ -73,10 +105,14 @@ async def list_all_snapshots(
 async def list_snapshots_for_volume(
     name: str, response: Response, client: DockerClient
 ) -> list[Snapshot] | None:
-    configuration = snapshots([TagFlag.for_volume(name)], GroupFlag())
-    logging.debug("retrieving snapshots", extra={"cmd": configuration.Cmd})
+    cmd = snapshots(tags=[TagFlag.for_volume(name)])
+    logging.debug("retrieving snapshots", extra={"cmd": " ".join(cmd)})
 
-    result = await run_container(client.docker, configuration, "backupd-retrieve")
+    settings = Settings()
+    config = await configure_snapshots(client, cmd)
+    result = await start_and_wait(
+        client, name="backupd-retrieve", config=config, timeout=settings.timeout_seconds
+    )
 
     status = ["failure", "success"][result.success]
     level = [logging.ERROR, logging.INFO][result.success]
@@ -97,16 +133,19 @@ async def list_snapshots_for_volume(
 async def list_snapshots_for_container(
     name: str, response: Response, client: DockerClient
 ) -> list[SnapshotGroupping] | None:
-    volumes = await client.volumes_from(name)
+    volumes = await volumes_from(client, name)
     if volumes is None:
         response.status_code = HTTPStatus.NOT_FOUND
         return None
 
-    tags = map(TagFlag.for_volume, volumes)
-    configuration = snapshots(tags, GroupFlag.tags())
-    logging.debug("retrieving snapshots", extra={"cmd": configuration.Cmd})
+    cmd = snapshots(tags=map(TagFlag.for_volume, volumes), groupping=GroupFlag.tags())
+    logging.debug("retrieving snapshots", extra={"cmd": " ".join(cmd)})
 
-    result = await run_container(client.docker, configuration, "backupd-retrieve")
+    settings = Settings()
+    config = await configure_snapshots(client, cmd)
+    result = await start_and_wait(
+        client, name="backupd-retrieve", config=config, timeout=settings.timeout_seconds
+    )
 
     status = ["failure", "success"][result.success]
     level = [logging.ERROR, logging.INFO][result.success]

@@ -1,6 +1,9 @@
+import logging
 from datetime import datetime
+from itertools import chain
 from typing import Annotated, Literal
-from pydantic import BaseModel, Field
+
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
 from backupd.restic.flags import Tag
 
@@ -183,3 +186,20 @@ RestoreMessage = Annotated[
     RestoreStatus | RestoreVerboseStatus | RestoreSummary | Error | ExitError,
     Field(discriminator="message_type"),
 ]
+
+
+### common
+
+
+def parse_messages[T](message_type: type[T], stdout: str, stderr: str) -> list[T]:
+    lines = chain(stdout.splitlines(), stderr.splitlines())
+    adapter: TypeAdapter[T] = TypeAdapter(message_type)
+
+    messages: list[T] = []
+    for line in lines:
+        try:
+            messages.append(adapter.validate_json(line))
+        except ValidationError as e:
+            logging.warning(e, extra={"exception": "ValidationError", "input": line})
+
+    return messages
