@@ -1,15 +1,24 @@
 import logging
 from collections.abc import Iterable
 from http import HTTPStatus
+from pathlib import Path
 from typing import cast
 
 from fastapi import APIRouter, Response
 
-from backupd.docker import DockerClient, run_container
+from backupd.docker.interface import (
+    DockerClient,
+    configure_container,
+    containers,
+    start_and_wait,
+    volume_exists,
+    volumes,
+    volumes_from,
+)
 from backupd.metrics import backup_duration, backup_result
-from backupd.restic.backup import BackupMessage, BackupSummary, backup
-from backupd.restic.common import parse_messages
-from backupd.settings import Settings
+from backupd.restic.commands import backup
+from backupd.restic.models import BackupMessage, BackupSummary, parse_messages
+from backupd.settings import RepositorySettings, Settings
 
 router = APIRouter(prefix="/backup")
 
@@ -21,8 +30,25 @@ type ConatinersBackup = dict[str, BulkBackup]
 async def run_backup(client: DockerClient, volume: str) -> tuple[bool, VolumeBackup]:
     logging.debug("starting volume backup", extra={"volume": volume})
 
-    configuration = backup(volume)
-    result = await run_container(client.docker, configuration, "backupd-backup")
+    settings = Settings()
+    repository = RepositorySettings()
+    mountpoint = Path("/data")
+
+    cmd = backup(volume=volume, mountpoint=mountpoint)
+    config = await configure_container(
+        client,
+        image=settings.runner_image,
+        entrypoint=settings.runner_entrypoint,
+        cmd=cmd,
+        env=repository.env,
+        volumes={volume: mountpoint},
+        binds=None
+        if repository.restic.backend != "local"
+        else {Path(repository.restic.location): Path(repository.restic.location)},
+    )
+    result = await start_and_wait(
+        client, name="backupd-backup", config=config, timeout=settings.timeout_seconds
+    )
 
     messages = parse_messages(
         cast(type[BackupMessage], BackupMessage), result.stdout, result.stderr
@@ -76,9 +102,9 @@ async def run_bulk_backup(
 async def backup_all_volumes(response: Response, client: DockerClient) -> BulkBackup:
     settings = Settings()
 
-    volumes = await client.volumes()
+    volume_list = await volumes(client)
     success, messages = await run_bulk_backup(
-        client, volumes, settings.abort_on_failure
+        client, volume_list, settings.abort_on_failure
     )
 
     if not success:
@@ -91,7 +117,7 @@ async def backup_all_volumes(response: Response, client: DockerClient) -> BulkBa
 async def backup_volume(
     name: str, response: Response, client: DockerClient
 ) -> VolumeBackup | None:
-    if not await client.volume_exists(name):
+    if not await volume_exists(client, name):
         response.status_code = HTTPStatus.NOT_FOUND
         return None
 
@@ -109,11 +135,11 @@ async def backup_all_conatiner(
 ) -> ConatinersBackup:
     settings = Settings()
 
-    containers = await client.containers()
+    container_list = await containers(client)
 
     messages: ConatinersBackup = {}
-    for container in containers:
-        volumes = await client.volumes_from(container)
+    for container in container_list:
+        volumes = await volumes_from(client, container)
         assert volumes is not None
 
         success, backup_messages = await run_bulk_backup(
@@ -137,7 +163,7 @@ async def backup_container(
 ) -> BulkBackup | None:
     settings = Settings()
 
-    volumes = await client.volumes_from(name)
+    volumes = await volumes_from(client, name)
     if volumes is None:
         response.status_code = HTTPStatus.NOT_FOUND
         return None
