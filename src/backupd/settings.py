@@ -10,6 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     runner_image: str
+    runner_entrypoint: str | None = None
     timeout_seconds: int = 60 * 5
     abort_on_failure: bool = True
 
