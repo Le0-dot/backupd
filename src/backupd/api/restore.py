@@ -26,12 +26,13 @@ type ContainerRestore = dict[str, VolumeRestore]
 async def run_restore(
     client: DockerClient, volume: str, snapshot_id: str | Literal["latest"]
 ) -> tuple[bool, VolumeRestore]:
-    logging.debug("staring volume restoreation", extra={"volume": volume})
-
     settings = Settings()
     repository = RepositorySettings()
     mountpoint = Path("/data")
+
     cmd = restore(volume=volume, mountpoint=mountpoint, snapshot_id=snapshot_id)
+    logging.debug("starting volume restore", extra={"volume": volume, "cmd": cmd})
+
     config = await configure_container(
         client,
         image=settings.runner_image,

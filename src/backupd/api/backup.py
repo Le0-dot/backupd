@@ -28,13 +28,15 @@ type ConatinersBackup = dict[str, BulkBackup]
 
 
 async def run_backup(client: DockerClient, volume: str) -> tuple[bool, VolumeBackup]:
-    logging.debug("starting volume backup", extra={"volume": volume})
-
     settings = Settings()
     repository = RepositorySettings()
     mountpoint = Path("/data")
 
     cmd = backup(volume=volume, mountpoint=mountpoint)
+    logging.debug(
+        "starting volume backup", extra={"volume": volume, "cmd": " ".join(cmd)}
+    )
+
     config = await configure_container(
         client,
         image=settings.runner_image,
