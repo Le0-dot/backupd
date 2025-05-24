@@ -32,7 +32,7 @@ class TagFlag:
     @override
     def __str__(self) -> str:
         if self:
-            return f"--tag {','.join(self.tags)}"
+            return f"--tag={','.join(self.tags)}"
         return ""
 
     def __bool__(self) -> bool:
@@ -58,7 +58,7 @@ class GroupFlag:
     @override
     def __str__(self) -> str:
         if self.groups:
-            return f"--group-by {','.join(self.groups)}"
+            return f"--group-by={','.join(self.groups)}"
         return ""
 
     def __bool__(self) -> bool:
