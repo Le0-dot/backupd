@@ -23,16 +23,15 @@ from backupd.settings import RepositorySettings, Settings
 router = APIRouter(prefix="/list")
 
 
-async def configure_snapshots(docker: Docker, cmd: list[str]) -> ContainerCreate:
+def configure_snapshots(cmd: list[str]) -> ContainerCreate:
     settings = Settings()
     repository = RepositorySettings()
-    return await configure_container(
-        docker,
+    return configure_container(
         image=settings.runner_image,
         entrypoint=settings.runner_entrypoint,
         cmd=cmd,
         env=repository.env,
-        binds=None
+        bind_mounts=None
         if repository.restic.backend != "local"
         else {Path(repository.restic.location): Path(repository.restic.location)},
     )
@@ -80,7 +79,7 @@ async def list_all_snapshots(
     logging.debug("retrieving snapshots", extra={"cmd": " ".join(cmd)})
 
     settings = Settings()
-    config = await configure_snapshots(client, cmd)
+    config = configure_snapshots(cmd)
     success, logs = await start_and_wait(
         client, name="backupd-retrieve", config=config, timeout=settings.timeout_seconds
     )
@@ -107,7 +106,7 @@ async def list_snapshots_for_volume(
     logging.debug("retrieving snapshots", extra={"cmd": " ".join(cmd)})
 
     settings = Settings()
-    config = await configure_snapshots(client, cmd)
+    config = configure_snapshots(cmd)
     success, logs = await start_and_wait(
         client, name="backupd-retrieve", config=config, timeout=settings.timeout_seconds
     )
@@ -139,7 +138,7 @@ async def list_snapshots_for_container(
     logging.debug("retrieving snapshots", extra={"cmd": " ".join(cmd)})
 
     settings = Settings()
-    config = await configure_snapshots(client, cmd)
+    config = configure_snapshots(cmd)
     success, logs = await start_and_wait(
         client, name="backupd-retrieve", config=config, timeout=settings.timeout_seconds
     )

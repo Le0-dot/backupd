@@ -33,14 +33,13 @@ async def run_restore(
     cmd = restore(volume=volume, mountpoint=mountpoint, snapshot_id=snapshot_id)
     logging.debug("starting volume restore", extra={"volume": volume, "cmd": cmd})
 
-    config = await configure_container(
-        client,
+    config = configure_container(
         image=settings.runner_image,
         entrypoint=settings.runner_entrypoint,
         cmd=cmd,
         env=repository.env,
-        volumes={volume: mountpoint},
-        binds=None
+        volume_mounts={volume: mountpoint},
+        bind_mounts=None
         if repository.restic.backend != "local"
         else {Path(repository.restic.location): Path(repository.restic.location)},
     )
@@ -89,13 +88,12 @@ async def restore_volume(
     settings = Settings()
     repository = RepositorySettings()
     cmd = snapshots(snapshot_id=snapshot_id)
-    config = await configure_container(
-        client,
+    config = configure_container(
         image=settings.runner_image,
         entrypoint=settings.runner_entrypoint,
         cmd=cmd,
         env=repository.env,
-        binds=None
+        bind_mounts=None
         if repository.restic.backend != "local"
         else {Path(repository.restic.location): Path(repository.restic.location)},
     )

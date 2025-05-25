@@ -55,7 +55,6 @@ class Mount(BaseModel):
     Target: str
     Source: str
     Type: Literal["bind", "volume", "tmpfs", "npipe", "cluster"]
-    ReadOnly: bool
 
 
 class HostConfig(BaseModel):

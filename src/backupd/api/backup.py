@@ -37,14 +37,13 @@ async def run_backup(client: DockerClient, volume: str) -> tuple[bool, VolumeBac
         "starting volume backup", extra={"volume": volume, "cmd": " ".join(cmd)}
     )
 
-    config = await configure_container(
-        client,
+    config = configure_container(
         image=settings.runner_image,
         entrypoint=settings.runner_entrypoint,
         cmd=cmd,
         env=repository.env,
-        volumes={volume: mountpoint},
-        binds=None
+        volume_mounts={volume: mountpoint},
+        bind_mounts=None
         if repository.restic.backend != "local"
         else {Path(repository.restic.location): Path(repository.restic.location)},
     )

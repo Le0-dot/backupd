@@ -1,8 +1,8 @@
 import asyncio
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from itertools import filterfalse
 from pathlib import Path
-from typing import Annotated, NamedTuple
+from typing import Annotated
 
 from aiodocker import Docker, DockerError
 from fastapi import Depends
@@ -46,7 +46,7 @@ async def volume_exists(docker: Docker, volume_name: str) -> bool:
 
 
 async def volumes(docker: Docker) -> list[str]:
-    response = await docker.volumes.list(docker)
+    response = await docker.volumes.list()
     volume_list = VolumeList.model_validate(response)
     named = filterfalse(Volume.is_anonymous, volume_list.Volumes)
     names = map(lambda volume: volume.Name, named)
@@ -83,37 +83,43 @@ async def containers(docker: Docker) -> list[str]:
     return [name.removeprefix("/") for name in names]
 
 
-async def configure_container(
-    docker: Docker,
-    /,
+def configure_container(
     *,
     image: str,
     entrypoint: str | None = None,
-    cmd: list[str] | None = None,
-    env: list[str] | None = None,
-    volumes: dict[str, Path] | None = None,
-    binds: dict[Path, Path] | None = None,
+    cmd: Iterable[str] | None = None,
+    env: Iterable[str] | None = None,
+    volume_mounts: Mapping[str, Path] | None = None,
+    bind_mounts: Mapping[Path, Path] | None = None,
 ) -> ContainerCreate:
-    # TODO: Validate volumes
-    volume_mounts = [
-        Mount(Source=volume, Target=str(container_path), Type="volume", ReadOnly=False)
-        for volume, container_path in (volumes or {}).items()
+    """
+    Helper function for building `ContainerCreate` model
+
+    Keyword arguments:
+    `image` - docker image name
+    `entrypoint` - entrypoint which will override default image entrypoint
+    `cmd` - command line argmunets split on space
+    `env` - environment variables passed to container
+    `volume_mounts` - mapping of volume names to container path, caller must ensure that volumes exist beforehand
+    `bind_mounts` - mapping of host path to container path, caller must ensure that host path exists beforehand
+    """
+
+    mounts = [
+        Mount(Source=volume_name, Target=str(container_path), Type="volume")
+        for volume_name, container_path in (volume_mounts or {}).items()
     ]
-    bind_mounts = [
-        Mount(
-            Source=str(host_path),
-            Target=str(container_path),
-            Type="bind",
-            ReadOnly=False,
-        )
-        for host_path, container_path in (binds or {}).items()
-    ]
+
+    mounts.extend(
+        Mount(Source=str(host_path), Target=str(container_path), Type="bind")
+        for host_path, container_path in (bind_mounts or {}).items()
+    )
+
     return ContainerCreate(
         Image=image,
         Entrypoint=entrypoint,
-        Cmd=cmd,
-        Env=env,
-        HostConfig=HostConfig(Mounts=volume_mounts + bind_mounts),
+        Cmd=list(cmd) if cmd else None,
+        Env=list(env) if env else None,
+        HostConfig=HostConfig(Mounts=mounts),
     )
 
 
