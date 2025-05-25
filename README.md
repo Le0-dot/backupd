@@ -12,8 +12,9 @@ Backup all your docker containers with ease.
 - [x] Exporting metrics in [prometheus](https://prometheus.io) compatible format
 - [x] Support for `rclone` restic repositories
 - [x] Structured logging in logfmt format
-- [ ] Forgeting of old snapshots
+- [x] Forgeting of old snapshots
 - [ ] Support for all restic repositories
+- [ ] Testing (yeah, I know...)
 
 
 ## Installation
@@ -30,13 +31,15 @@ docker pull ghcr.io/le0-dot/backupd:<tag>
 Backupd is configured exclusively with environment variables.
 
 - `BACKUPD_RUNNER_IMAGE` - image that will be runnning the backups, should include executables for `sh`, `restic` and optionally `rclone` if used.
-- `BACKUPD_TIMEOUT_SECONDS` (Optional, default: `300`) - maximum time for backup to run, consider increasing for huge volumes or bad latency.
+- `BACKUPD_BACKUP_TIMEOUT_SECONDS` (Optional, default: `300`) - maximum time for backup to run, consider increasing for huge volumes or bad latency.
+- `BACKUPD_REMOVE_TIMEOUT_SECONDS` (Optional, default: `600`) - maximum time for remove to run, consider increasing for huge volumes or bad latency.
 - `BACKUPD_ABORT_ON_FAILURE` (Optional, default: `true`) - wherever to fail immedeatly in bulk backup/restore jobs.
-- `DOCKER_HOST` (Optional) - should be used if you do not wish to mount docker socket directly to the container, see [docker documentation](https://docs.docker.com/reference/cli/docker/#environment-variables)
-- `RESTIC_REPOSITORY` - as per [restic documentation](https://restic.readthedocs.io/en/stable/040_backup.html#environment-variables)
-- `RESTIC_PASSWORD` - as per [restic documentation](https://restic.readthedocs.io/en/stable/040_backup.html#environment-variables)
-- `RESTIC_HOST` (Optional, default: `backupd`) - as per [restic documentation](https://restic.readthedocs.io/en/stable/040_backup.html#environment-variables)
-- `RCLONE_*`, `RCLONE_CONFIG_*` (Optional) - as per [rclone documentation](https://rclone.org/docs/#environment-variables)
+- `DOCKER_HOST` (Optional) - should be used if you do not wish to mount docker socket directly to the container, see [docker documentation](https://docs.docker.com/reference/cli/docker/#environment-variables).
+- `RESTIC_REPOSITORY` - as per [restic documentation](https://restic.readthedocs.io/en/stable/040_backup.html#environment-variables).
+- `RESTIC_PASSWORD` - as per [restic documentation](https://restic.readthedocs.io/en/stable/040_backup.html#environment-variables).
+- `RESTIC_HOST` (Optional, default: `backupd`) - as per [restic documentation](https://restic.readthedocs.io/en/stable/040_backup.html#environment-variables).
+- `RESTIC_KEEP_*` (Optional) - same as [`--keep-*`](https://restic.readthedocs.io/en/stable/060_forget.html#removing-snapshots-according-to-a-policy) flag for `restic`, only used in removing of old snapshots.
+- `RCLONE_*` (Optional) - as per [rclone documentation](https://rclone.org/docs/#environment-variables).
 
 
 ### Endpoints
@@ -59,6 +62,8 @@ Backupd exposes a number of HTTP endpoints:
 - POST `/restore/volume/{name}` - restore volume from latest snapshot
 - POST `/restore/volume/{name}/{snapshot}` - restore volume from snapshot
 - POST `/restore/container/{name}` - restore all volumes for container from their latest snapshot
+- DELETE `/remove/snapshot` - remove old snapshots according to poilicy
+- DELETE `/remove/snapshot/{snapshot_id}` - remove specific snapshot
 - GET `/metrics` - collect [prometheus](https://prometheus.io) metrics for monitoring and alerting
 - GET `/docs` - view [Swagger UI](https://swagger.io/tools/swagger-ui)
 
@@ -81,6 +86,8 @@ services:
 
       - RESTIC_REPOSITORY=...
       - RESTIC_PASSWORD=...
+
+      # - RESTIC_KEEP_LAST=10 # If you are going to use remove functionality
 
       # - RCLONE_CONFIG_..._TYPE=... # Set RCLONE_CONFIG_* to configure rclone repository
 ```
