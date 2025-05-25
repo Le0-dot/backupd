@@ -11,6 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from backupd.api.backup import router as backup_router
 from backupd.api.list import router as list_router
 from backupd.api.restore import router as restore_router
+from backupd.api.remove import router as remove_router
 from backupd.metrics import api_calls
 from backupd.settings import RepositorySettings, Settings
 
@@ -20,11 +21,13 @@ async def lifespan(app: FastAPI):
     logging.info("application started")
 
     try:
-        _ = Settings()  # validate settings
-        _ = RepositorySettings()  # validate restic
+        settings = Settings()
+        logging.debug(settings)
+        repository = RepositorySettings()
+        logging.debug(repository)
     except ValidationError as e:
         logging.error("incorrect settings, see documentation")
-        logging.debug(e, extra={"exception": "ValidationError"})
+        logging.debug(e.errors(), extra={"exception": "ValidationError"})
         return
 
     app.mount("/metrics", make_asgi_app())
@@ -84,6 +87,7 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(list_router)
 app.include_router(backup_router)
 app.include_router(restore_router)
+app.include_router(remove_router)
 
 app.add_middleware(APIMetricsMiddleware)
 app.add_middleware(LoggingMiddleware)
