@@ -126,6 +126,17 @@ def configure_container(
 async def start_and_wait(
     docker: Docker, /, *, name: str, config: ContainerCreate, timeout: float
 ) -> tuple[bool, str]:
+    """
+    Create container, start it, wait for completion or timeout, collect logs and delete container.
+
+    Keyword arguments:
+    `name` - name of docker container that will be created
+    `config` - configuration for creation of container (see `configure_container`)
+    `timeout` - seconds to wait for container to stop by itself, before forcefully killing it
+
+    Returns:
+    `tuple` of success (exit code is `0`) and logs produced by container
+    """
     container = await docker.containers.run(
         config.model_dump(exclude_none=True), name=name
     )
