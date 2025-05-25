@@ -48,7 +48,10 @@ async def run_backup(client: DockerClient, volume: str) -> tuple[bool, VolumeBac
         else {Path(repository.restic.location): Path(repository.restic.location)},
     )
     success, logs = await start_and_wait(
-        client, name="backupd-backup", config=config, timeout=settings.timeout_seconds
+        client,
+        name="backupd-backup",
+        config=config,
+        timeout=settings.backup_timeout_seconds,
     )
 
     messages = parse_messages(cast(type[BackupMessage], BackupMessage), logs)

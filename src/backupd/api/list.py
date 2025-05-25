@@ -2,7 +2,6 @@ import logging
 from http import HTTPStatus
 from pathlib import Path
 
-from aiodocker import Docker
 from fastapi import APIRouter, Response
 
 from backupd.docker.interface import (
@@ -81,7 +80,10 @@ async def list_all_snapshots(
     settings = Settings()
     config = configure_snapshots(cmd)
     success, logs = await start_and_wait(
-        client, name="backupd-retrieve", config=config, timeout=settings.timeout_seconds
+        client,
+        name="backupd-retrieve",
+        config=config,
+        timeout=settings.backup_timeout_seconds,
     )
 
     status = ["failure", "success"][success]
@@ -108,7 +110,10 @@ async def list_snapshots_for_volume(
     settings = Settings()
     config = configure_snapshots(cmd)
     success, logs = await start_and_wait(
-        client, name="backupd-retrieve", config=config, timeout=settings.timeout_seconds
+        client,
+        name="backupd-retrieve",
+        config=config,
+        timeout=settings.backup_timeout_seconds,
     )
 
     status = ["failure", "success"][success]
@@ -140,7 +145,10 @@ async def list_snapshots_for_container(
     settings = Settings()
     config = configure_snapshots(cmd)
     success, logs = await start_and_wait(
-        client, name="backupd-retrieve", config=config, timeout=settings.timeout_seconds
+        client,
+        name="backupd-retrieve",
+        config=config,
+        timeout=settings.backup_timeout_seconds,
     )
 
     status = ["failure", "success"][success]

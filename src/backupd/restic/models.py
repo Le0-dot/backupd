@@ -4,15 +4,13 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
-from backupd.restic.flags import Tag
-
 ### snapshots
 
 
 class GroupKey(BaseModel):
-    hostname: str
+    hostname: str | None
     paths: list[str] | None
-    tags: list[str]
+    tags: list[str] | None
 
 
 class Snapshot(BaseModel):
@@ -31,9 +29,6 @@ class Snapshot(BaseModel):
     program_version: str
     id: str
     short_id: str
-
-    def is_for(self, volume: str) -> bool:
-        return Tag.for_volume(volume) in self.tags
 
 
 class SnapshotGroupping(BaseModel):
@@ -185,6 +180,23 @@ RestoreMessage = Annotated[
     RestoreStatus | RestoreVerboseStatus | RestoreSummary | Error | ExitError,
     Field(discriminator="message_type"),
 ]
+
+
+### Forget
+
+
+class KeepReason(BaseModel):
+    snapshot: Snapshot
+    matches: list[str]
+
+
+class ForgetGroup(BaseModel):
+    tags: list[str] | None
+    host: str
+    paths: list[str] | None
+    keep: list[Snapshot] | None
+    remove: list[Snapshot] | None
+    reasons: list[KeepReason] | None
 
 
 ### common

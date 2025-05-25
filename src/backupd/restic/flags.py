@@ -1,5 +1,8 @@
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Literal, Self, override
+
+from backupd.settings import ForgetPolicy
 
 
 class Tag(str):
@@ -75,3 +78,18 @@ class GroupFlag:
     @classmethod
     def tags(cls) -> Self:
         return cls({"tags"})
+
+
+def keep(policy: ForgetPolicy) -> Iterable[str]:
+    if policy.last:
+        yield f"--keep-last={policy.last}"
+    if policy.hourly:
+        yield f"--keep-hourly={policy.hourly}"
+    if policy.daily:
+        yield f"--keep-daily={policy.daily}"
+    if policy.weekly:
+        yield f"--keep-weekly={policy.weekly}"
+    if policy.monthly:
+        yield f"--keep-monthly={policy.monthly}"
+    if policy.yearly:
+        yield f"--keep-yearly={policy.yearly}"

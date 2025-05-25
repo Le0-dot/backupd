@@ -14,6 +14,7 @@ from backupd.docker.interface import (
 )
 from backupd.metrics import restore_result
 from backupd.restic.commands import restore, snapshots
+from backupd.restic.flags import Tag
 from backupd.restic.models import RestoreMessage, Snapshot, parse_messages
 from backupd.settings import RepositorySettings, Settings
 
@@ -44,7 +45,10 @@ async def run_restore(
         else {Path(repository.restic.location): Path(repository.restic.location)},
     )
     success, logs = await start_and_wait(
-        client, name="backupd-restore", config=config, timeout=settings.timeout_seconds
+        client,
+        name="backupd-restore",
+        config=config,
+        timeout=settings.backup_timeout_seconds,
     )
 
     messages = parse_messages(cast(type[RestoreMessage], RestoreMessage), logs)
@@ -98,7 +102,10 @@ async def restore_volume(
         else {Path(repository.restic.location): Path(repository.restic.location)},
     )
     success, logs = await start_and_wait(
-        client, name="backupd-retrieve", config=config, timeout=settings.timeout_seconds
+        client,
+        name="backupd-retrieve",
+        config=config,
+        timeout=settings.backup_timeout_seconds,
     )
 
     if not success:
@@ -106,7 +113,8 @@ async def restore_volume(
         return None
 
     [[snapshot]] = parse_messages(list[Snapshot], logs)
-    if not snapshot.is_for(name):
+
+    if Tag.for_volume(name) not in snapshot.tags:
         response.status_code = HTTPStatus.BAD_REQUEST
         return None
 

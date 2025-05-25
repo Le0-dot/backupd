@@ -2,16 +2,17 @@ from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from functools import cached_property
 from itertools import starmap
-from typing import ClassVar, Self, cast, override
+from typing import ClassVar, Literal, Self, cast, override
 
-from pydantic import BaseModel, RootModel, field_validator, model_validator
+from pydantic import BaseModel, Field, RootModel, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     runner_image: str
     runner_entrypoint: str | None = None
-    timeout_seconds: int = 60 * 5
+    backup_timeout_seconds: int = 60 * 5
+    remove_timeout_seconds: int = 60 * 10
     abort_on_failure: bool = True
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
@@ -42,10 +43,20 @@ class DictTree[T, U](Iterable[tuple[TreePath[T], U]]):
                 yield (key, *path), leaf
 
 
+class ForgetPolicy(BaseModel):
+    last: int | Literal["unlimited"] | None = None
+    hourly: int | Literal["unlimited"] | None = None
+    daily: int | Literal["unlimited"] | None = None
+    weekly: int | Literal["unlimited"] | None = None
+    monthly: int | Literal["unlimited"] | None = None
+    yearly: int | Literal["unlimited"] | None = None
+
+
 class Restic(BaseModel):
     repository: str
     password: str
     host: str = "backupd"
+    keep: ForgetPolicy
 
     @property
     def backend(self) -> str:
@@ -82,7 +93,6 @@ class RepositorySettings(BaseSettings):
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_nested_delimiter="_",
-        env_nested_max_split=1,
         enable_decoding=False,
     )
 

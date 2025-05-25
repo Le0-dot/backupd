@@ -2,7 +2,8 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Literal
 
-from backupd.restic.flags import GroupFlag, TagFlag
+from backupd.restic.flags import GroupFlag, TagFlag, keep
+from backupd.settings import ForgetPolicy
 
 
 def snapshots(
@@ -40,3 +41,19 @@ def restore(
         mountpoint,
     )
     return list(map(str, cmd))
+
+
+def forget(
+    *, snapshot_id: str | None = None, forget_policy: ForgetPolicy | None = None
+) -> list[str]:
+    cmd = (
+        "--verbose=2",
+        "--json",
+        "forget",
+        TagFlag.for_app(),
+        GroupFlag.tags(),
+        "--prune",
+        *keep(forget_policy or ForgetPolicy()),
+        snapshot_id,
+    )
+    return list(map(str, filter(None, cmd)))
