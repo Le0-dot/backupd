@@ -95,7 +95,7 @@ async def run_bulk_backup(
     return success, messages
 
 
-@router.post("/backup/volume")
+@router.post("/volume")
 async def backup_all_volumes(response: Response, client: DockerClient) -> BulkBackup:
     settings = Settings()
 
@@ -110,7 +110,7 @@ async def backup_all_volumes(response: Response, client: DockerClient) -> BulkBa
     return messages
 
 
-@router.post("/backup/volume/{name}")
+@router.post("/volume/{name}")
 async def backup_volume(
     name: str, response: Response, client: DockerClient
 ) -> VolumeBackup | None:
@@ -126,7 +126,7 @@ async def backup_volume(
     return messages
 
 
-@router.post("/backup/container")
+@router.post("/container")
 async def backup_all_conatiner(
     response: Response, client: DockerClient
 ) -> ConatinersBackup:
@@ -154,7 +154,7 @@ async def backup_all_conatiner(
     return messages
 
 
-@router.post("/backup/container/{name}")
+@router.post("/container/{name}")
 async def backup_container(
     name: str, response: Response, client: DockerClient
 ) -> BulkBackup | None:
