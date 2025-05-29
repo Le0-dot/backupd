@@ -56,7 +56,7 @@ class Restic(BaseModel):
     repository: str
     password: str
     host: str = "backupd"
-    keep: ForgetPolicy
+    keep: ForgetPolicy = Field(default_factory=ForgetPolicy)
 
     @property
     def backend(self) -> str:
