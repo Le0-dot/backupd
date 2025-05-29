@@ -103,7 +103,7 @@ curl -X POST http://localhost:9988/backup/container
 
 ```ini
 [Unit]
-Description=Trigger backup of docker volumes to repository in %I
+Description=Trigger backup of docker volumes
 
 [Service]
 Type=oneshot
@@ -114,7 +114,7 @@ ExecStart=/usr/bin/curl -X POST http://localhost:9988/backup/container
 
 ```ini
 [Unit]
-Description=Trigger backup of docker volumes every day at 5 AM to repository in %I
+Description=Trigger backup of docker volumes every day at 5 AM
 
 [Timer]
 OnCalendar=*-*-* 05:00:00
